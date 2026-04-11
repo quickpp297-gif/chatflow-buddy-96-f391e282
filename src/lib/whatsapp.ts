@@ -97,11 +97,11 @@ export async function upsertAutoReply(reply: Partial<AutoReply>) {
   if (reply.id) {
     const { error } = await supabase
       .from("auto_replies")
-      .update(reply)
+      .update(reply as any)
       .eq("id", reply.id);
     if (error) throw error;
   } else {
-    const { error } = await supabase.from("auto_replies").insert(reply);
+    const { error } = await supabase.from("auto_replies").insert(reply as any);
     if (error) throw error;
   }
 }
