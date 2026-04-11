@@ -14,7 +14,188 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      auto_replies: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean | null
+          reply_message: string
+          trigger_keyword: string | null
+          trigger_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          reply_message: string
+          trigger_keyword?: string | null
+          trigger_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          reply_message?: string
+          trigger_keyword?: string | null
+          trigger_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      contacts: {
+        Row: {
+          created_at: string
+          id: string
+          is_window_open: boolean | null
+          last_message_at: string | null
+          name: string | null
+          phone_number: string
+          profile_pic_url: string | null
+          unread_count: number | null
+          updated_at: string
+          window_expires_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_window_open?: boolean | null
+          last_message_at?: string | null
+          name?: string | null
+          phone_number: string
+          profile_pic_url?: string | null
+          unread_count?: number | null
+          updated_at?: string
+          window_expires_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_window_open?: boolean | null
+          last_message_at?: string | null
+          name?: string | null
+          phone_number?: string
+          profile_pic_url?: string | null
+          unread_count?: number | null
+          updated_at?: string
+          window_expires_at?: string | null
+        }
+        Relationships: []
+      }
+      messages: {
+        Row: {
+          contact_id: string
+          content: string | null
+          created_at: string
+          direction: string
+          id: string
+          media_filename: string | null
+          media_mime_type: string | null
+          media_url: string | null
+          message_type: string
+          status: string | null
+          template_data: Json | null
+          template_name: string | null
+          timestamp: string
+          wa_message_id: string | null
+        }
+        Insert: {
+          contact_id: string
+          content?: string | null
+          created_at?: string
+          direction: string
+          id?: string
+          media_filename?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_type?: string
+          status?: string | null
+          template_data?: Json | null
+          template_name?: string | null
+          timestamp?: string
+          wa_message_id?: string | null
+        }
+        Update: {
+          contact_id?: string
+          content?: string | null
+          created_at?: string
+          direction?: string
+          id?: string
+          media_filename?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
+          message_type?: string
+          status?: string | null
+          template_data?: Json | null
+          template_name?: string | null
+          timestamp?: string
+          wa_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_settings: {
+        Row: {
+          created_at: string
+          id: string
+          setting_key: string
+          setting_value: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          setting_key: string
+          setting_value?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          setting_key?: string
+          setting_value?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      whatsapp_templates: {
+        Row: {
+          category: string | null
+          components: Json | null
+          created_at: string
+          id: string
+          language: string
+          name: string
+          status: string | null
+        }
+        Insert: {
+          category?: string | null
+          components?: Json | null
+          created_at?: string
+          id?: string
+          language?: string
+          name: string
+          status?: string | null
+        }
+        Update: {
+          category?: string | null
+          components?: Json | null
+          created_at?: string
+          id?: string
+          language?: string
+          name?: string
+          status?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
