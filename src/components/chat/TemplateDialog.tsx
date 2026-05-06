@@ -3,20 +3,21 @@ import { Template, fetchTemplates } from "@/lib/whatsapp";
 import { X, Send } from "lucide-react";
 
 interface TemplateDialogProps {
+  accountId: string;
   onClose: () => void;
   onSend: (template: Template) => void;
 }
 
-export function TemplateDialog({ onClose, onSend }: TemplateDialogProps) {
+export function TemplateDialog({ accountId, onClose, onSend }: TemplateDialogProps) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchTemplates()
+    fetchTemplates(accountId)
       .then(setTemplates)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [accountId]);
 
   return (
     <div className="fixed inset-0 bg-foreground/50 flex items-center justify-center z-50 p-4">

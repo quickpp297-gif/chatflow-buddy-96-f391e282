@@ -6,333 +6,321 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req) => {
-  // Handle CORS
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  );
+
+  const url = new URL(req.url);
+  // URL: /functions/v1/whatsapp-webhook/<accountId>
+  const parts = url.pathname.split("/").filter(Boolean);
+  const accountId = parts[parts.length - 1];
+
+  // Lookup account credentials
+  const { data: account, error: accErr } = await supabase
+    .from("wa_accounts")
+    .select("*")
+    .eq("id", accountId)
+    .maybeSingle();
+
+  if (accErr || !account) {
+    console.error("Account not found:", accountId, accErr);
+    return new Response("Account not found", { status: 404 });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  const WHATSAPP_TOKEN = Deno.env.get("WHATSAPP_TOKEN")!;
-  const WHATSAPP_PHONE_ID = Deno.env.get("WHATSAPP_PHONE_ID")!;
-  const WEBHOOK_VERIFY_TOKEN = Deno.env.get("WEBHOOK_VERIFY_TOKEN") || "lovable_verify_token";
-
-  // GET = webhook verification from Facebook
+  // GET = verification handshake from Meta
   if (req.method === "GET") {
-    const url = new URL(req.url);
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
-
-    if (mode === "subscribe" && token === WEBHOOK_VERIFY_TOKEN) {
-      console.log("Webhook verified");
-      return new Response(challenge, { status: 200 });
+    if (mode === "subscribe" && token === account.verify_token) {
+      console.log("Webhook verified for account", accountId);
+      return new Response(challenge ?? "", { status: 200 });
     }
     return new Response("Forbidden", { status: 403 });
   }
 
-  // POST = incoming webhook events
-  if (req.method === "POST") {
-    try {
-      const body = await req.json();
-      console.log("Webhook received:", JSON.stringify(body));
+  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
-      const entries = body.entry || [];
-      for (const entry of entries) {
-        const changes = entry.changes || [];
-        for (const change of changes) {
-          if (change.field !== "messages") continue;
-          const value = change.value;
+  try {
+    const body = await req.json();
+    console.log("Webhook event for", accountId, ":", JSON.stringify(body).slice(0, 500));
 
-          // Handle status updates
-          if (value.statuses) {
-            for (const status of value.statuses) {
-              const { data: msg } = await supabase
-                .from("messages")
-                .update({ status: status.status })
-                .eq("wa_message_id", status.id);
-              console.log("Status updated:", status.id, status.status);
-            }
-          }
+    const TOKEN = account.access_token as string;
+    const PHONE_ID = account.phone_number_id as string;
 
-          // Handle incoming messages
-          if (value.messages) {
-            for (const message of value.messages) {
-              const from = message.from;
-              const contactInfo = value.contacts?.[0];
-              const contactName = contactInfo?.profile?.name || from;
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        if (change.field !== "messages") continue;
+        const value = change.value;
 
-              // Upsert contact
-              const { data: contact, error: contactError } = await supabase
-                .from("contacts")
-                .upsert(
-                  {
-                    phone_number: from,
-                    name: contactName,
-                    last_message_at: new Date().toISOString(),
-                    window_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                    is_window_open: true,
-                  },
-                  { onConflict: "phone_number" }
-                )
-                .select()
-                .single();
-
-              if (contactError) {
-                console.error("Contact upsert error:", contactError);
-                continue;
-              }
-
-              // Update unread count
-              await supabase
-                .from("contacts")
-                .update({ unread_count: (contact.unread_count || 0) + 1 })
-                .eq("id", contact.id);
-
-              // Determine message type and content
-              let messageType = message.type || "text";
-              let content = "";
-              let mediaUrl = "";
-              let mediaMimeType = "";
-              let mediaFilename = "";
-
-              switch (messageType) {
-                case "text":
-                  content = message.text?.body || "";
-                  break;
-                case "image":
-                  content = message.image?.caption || "";
-                  mediaUrl = message.image?.id || "";
-                  mediaMimeType = message.image?.mime_type || "image/jpeg";
-                  break;
-                case "video":
-                  content = message.video?.caption || "";
-                  mediaUrl = message.video?.id || "";
-                  mediaMimeType = message.video?.mime_type || "video/mp4";
-                  break;
-                case "audio":
-                  mediaUrl = message.audio?.id || "";
-                  mediaMimeType = message.audio?.mime_type || "audio/ogg";
-                  break;
-                case "document":
-                  content = message.document?.caption || "";
-                  mediaUrl = message.document?.id || "";
-                  mediaMimeType = message.document?.mime_type || "";
-                  mediaFilename = message.document?.filename || "";
-                  break;
-                case "sticker":
-                  mediaUrl = message.sticker?.id || "";
-                  mediaMimeType = message.sticker?.mime_type || "image/webp";
-                  break;
-                case "location":
-                  content = JSON.stringify({
-                    latitude: message.location?.latitude,
-                    longitude: message.location?.longitude,
-                    name: message.location?.name,
-                    address: message.location?.address,
-                  });
-                  break;
-                case "reaction":
-                  content = message.reaction?.emoji || "";
-                  break;
-                default:
-                  content = `Unsupported message type: ${messageType}`;
-                  messageType = "text";
-              }
-
-              // If media has an ID, download it to get the URL
-              if (mediaUrl && mediaUrl !== "") {
-                try {
-                  // Get media URL from WhatsApp
-                  const mediaResponse = await fetch(
-                    `https://graph.facebook.com/v21.0/${mediaUrl}`,
-                    {
-                      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-                    }
-                  );
-                  const mediaData = await mediaResponse.json();
-                  if (mediaData.url) {
-                    // Download media
-                    const downloadResponse = await fetch(mediaData.url, {
-                      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-                    });
-                    const blob = await downloadResponse.blob();
-                    const arrayBuffer = await blob.arrayBuffer();
-                    const uint8Array = new Uint8Array(arrayBuffer);
-                    
-                    // Upload to Supabase storage
-                    const fileName = `${Date.now()}_${mediaUrl}`;
-                    const bucketName = "whatsapp-media";
-                    
-                    const { data: uploadData, error: uploadError } = await supabase
-                      .storage
-                      .from(bucketName)
-                      .upload(`incoming/${fileName}`, uint8Array, {
-                        contentType: mediaMimeType,
-                      });
-
-                    if (!uploadError && uploadData) {
-                      const { data: publicUrl } = supabase
-                        .storage
-                        .from(bucketName)
-                        .getPublicUrl(`incoming/${fileName}`);
-                      mediaUrl = publicUrl.publicUrl;
-                    } else {
-                      console.error("Upload error:", uploadError);
-                    }
-                  }
-                } catch (e) {
-                  console.error("Media download error:", e);
-                }
-              }
-
-              // Save message
-              const { error: msgError } = await supabase
-                .from("messages")
-                .insert({
-                  contact_id: contact.id,
-                  wa_message_id: message.id,
-                  direction: "incoming",
-                  message_type: messageType,
-                  content,
-                  media_url: mediaUrl || null,
-                  media_mime_type: mediaMimeType || null,
-                  media_filename: mediaFilename || null,
-                  status: "delivered",
-                  timestamp: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-                });
-
-              if (msgError) {
-                console.error("Message insert error:", msgError);
-              }
-
-              // Check for auto-replies
-              await handleAutoReply(supabase, contact, content, from, WHATSAPP_TOKEN, WHATSAPP_PHONE_ID);
-            }
+        // Status updates
+        if (value.statuses) {
+          for (const status of value.statuses) {
+            await supabase
+              .from("messages")
+              .update({ status: status.status })
+              .eq("wa_message_id", status.id);
           }
         }
+
+        if (!value.messages) continue;
+
+        for (const message of value.messages) {
+          const from = message.from;
+          const contactInfo = value.contacts?.[0];
+          const contactName = contactInfo?.profile?.name || from;
+
+          // Find or create contact (scoped to account)
+          let { data: contact } = await supabase
+            .from("contacts")
+            .select("*")
+            .eq("account_id", accountId)
+            .eq("phone_number", from)
+            .maybeSingle();
+
+          if (!contact) {
+            const { data: newC } = await supabase
+              .from("contacts")
+              .insert({
+                account_id: accountId,
+                phone_number: from,
+                name: contactName,
+                last_message_at: new Date().toISOString(),
+                window_expires_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+                is_window_open: true,
+                unread_count: 1,
+              })
+              .select()
+              .single();
+            contact = newC;
+          } else {
+            await supabase
+              .from("contacts")
+              .update({
+                name: contact.name || contactName,
+                last_message_at: new Date().toISOString(),
+                window_expires_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+                is_window_open: true,
+                unread_count: (contact.unread_count || 0) + 1,
+              })
+              .eq("id", contact.id);
+          }
+
+          // Parse type
+          let messageType = message.type || "text";
+          let content = "";
+          let mediaId = "";
+          let mediaMimeType = "";
+          let mediaFilename = "";
+
+          switch (messageType) {
+            case "text": content = message.text?.body || ""; break;
+            case "image":
+              content = message.image?.caption || "";
+              mediaId = message.image?.id || "";
+              mediaMimeType = message.image?.mime_type || "image/jpeg";
+              break;
+            case "video":
+              content = message.video?.caption || "";
+              mediaId = message.video?.id || "";
+              mediaMimeType = message.video?.mime_type || "video/mp4";
+              break;
+            case "audio":
+            case "voice":
+              mediaId = message.audio?.id || message.voice?.id || "";
+              mediaMimeType = message.audio?.mime_type || message.voice?.mime_type || "audio/ogg";
+              messageType = "audio";
+              break;
+            case "document":
+              content = message.document?.caption || "";
+              mediaId = message.document?.id || "";
+              mediaMimeType = message.document?.mime_type || "";
+              mediaFilename = message.document?.filename || "";
+              break;
+            case "sticker":
+              mediaId = message.sticker?.id || "";
+              mediaMimeType = message.sticker?.mime_type || "image/webp";
+              break;
+            case "location":
+              content = JSON.stringify({
+                latitude: message.location?.latitude,
+                longitude: message.location?.longitude,
+                name: message.location?.name,
+                address: message.location?.address,
+              });
+              break;
+            case "reaction": content = message.reaction?.emoji || ""; break;
+            default:
+              content = `Unsupported message type: ${messageType}`;
+              messageType = "text";
+          }
+
+          // Download media to our storage
+          let mediaUrl = "";
+          if (mediaId) {
+            try {
+              const r1 = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+                headers: { Authorization: `Bearer ${TOKEN}` },
+              });
+              const meta = await r1.json();
+              if (meta.url) {
+                const r2 = await fetch(meta.url, {
+                  headers: { Authorization: `Bearer ${TOKEN}` },
+                });
+                const buf = new Uint8Array(await r2.arrayBuffer());
+                const ext = (mediaMimeType.split("/")[1] || "bin").split(";")[0];
+                const path = `${accountId}/incoming/${Date.now()}_${mediaId}.${ext}`;
+                const { error: upErr } = await supabase.storage
+                  .from("whatsapp-media")
+                  .upload(path, buf, { contentType: mediaMimeType, upsert: true });
+                if (!upErr) {
+                  mediaUrl = supabase.storage.from("whatsapp-media").getPublicUrl(path).data.publicUrl;
+                } else {
+                  console.error("upload err", upErr);
+                }
+              }
+            } catch (e) {
+              console.error("media download err", e);
+            }
+          }
+
+          await supabase.from("messages").insert({
+            account_id: accountId,
+            contact_id: contact!.id,
+            wa_message_id: message.id,
+            direction: "incoming",
+            message_type: messageType,
+            content,
+            media_url: mediaUrl || null,
+            media_mime_type: mediaMimeType || null,
+            media_filename: mediaFilename || null,
+            status: "delivered",
+            timestamp: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+          });
+
+          // Auto-reply: welcome (first incoming) / away / keyword
+          await handleAutoReply(supabase, account, contact!, content, from, TOKEN, PHONE_ID);
+        }
       }
-
-      return new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    } catch (error) {
-      console.error("Webhook error:", error);
-      return new Response(JSON.stringify({ error: "Internal server error" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
     }
-  }
 
-  return new Response("Method not allowed", { status: 405 });
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("Webhook error", e);
+    return new Response(JSON.stringify({ error: (e as Error).message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 });
+
+async function sendText(token: string, phoneId: string, to: string, body: string) {
+  const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body } }),
+  });
+  return r.json();
+}
+
+async function sendImage(token: string, phoneId: string, to: string, link: string, caption: string) {
+  const r = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to,
+      type: "image",
+      image: { link, caption },
+    }),
+  });
+  return r.json();
+}
+
+async function saveOutgoing(
+  supabase: any,
+  accountId: string,
+  contactId: string,
+  type: string,
+  content: string,
+  mediaUrl: string | null,
+  waId: string | null
+) {
+  await supabase.from("messages").insert({
+    account_id: accountId,
+    contact_id: contactId,
+    wa_message_id: waId,
+    direction: "outgoing",
+    message_type: type,
+    content,
+    media_url: mediaUrl,
+    status: "sent",
+    timestamp: new Date().toISOString(),
+  });
+}
 
 async function handleAutoReply(
   supabase: any,
+  account: any,
   contact: any,
   messageContent: string,
   from: string,
   token: string,
   phoneId: string
 ) {
-  // Check if auto reply is enabled
-  const { data: autoSetting } = await supabase
-    .from("whatsapp_settings")
-    .select("setting_value")
-    .eq("setting_key", "auto_reply_enabled")
-    .single();
-
-  if (autoSetting?.setting_value !== "true") return;
-
-  // Check away mode
-  const { data: awaySetting } = await supabase
-    .from("whatsapp_settings")
-    .select("setting_value")
-    .eq("setting_key", "away_mode")
-    .single();
-
-  if (awaySetting?.setting_value === "true") {
-    const { data: awayReply } = await supabase
-      .from("auto_replies")
-      .select("reply_message")
-      .eq("trigger_type", "away")
-      .eq("is_active", true)
-      .single();
-
-    if (awayReply) {
-      await sendWhatsAppMessage(token, phoneId, from, awayReply.reply_message);
-      await saveOutgoingMessage(supabase, contact.id, awayReply.reply_message);
-    }
+  // Away mode wins
+  if (account.away_enabled && account.away_message) {
+    const r = await sendText(token, phoneId, from, account.away_message);
+    const wid = r?.messages?.[0]?.id || null;
+    await saveOutgoing(supabase, account.id, contact.id, "text", account.away_message, null, wid);
     return;
   }
 
-  // Check if this is the first message (welcome)
+  // Welcome on first incoming message
   const { count } = await supabase
     .from("messages")
     .select("*", { count: "exact", head: true })
     .eq("contact_id", contact.id)
     .eq("direction", "incoming");
 
-  if (count === 1) {
-    const { data: welcomeReply } = await supabase
-      .from("auto_replies")
-      .select("reply_message")
-      .eq("trigger_type", "welcome")
-      .eq("is_active", true)
-      .single();
-
-    if (welcomeReply) {
-      await sendWhatsAppMessage(token, phoneId, from, welcomeReply.reply_message);
-      await saveOutgoingMessage(supabase, contact.id, welcomeReply.reply_message);
-      return;
+  if (count === 1 && account.welcome_enabled) {
+    if (account.welcome_image_url) {
+      const r = await sendImage(token, phoneId, from, account.welcome_image_url, account.welcome_message || "");
+      const wid = r?.messages?.[0]?.id || null;
+      await saveOutgoing(
+        supabase, account.id, contact.id, "image",
+        account.welcome_message || "", account.welcome_image_url, wid
+      );
+    } else if (account.welcome_message) {
+      const r = await sendText(token, phoneId, from, account.welcome_message);
+      const wid = r?.messages?.[0]?.id || null;
+      await saveOutgoing(supabase, account.id, contact.id, "text", account.welcome_message, null, wid);
     }
+    return;
   }
 
-  // Check keyword triggers
+  // Keyword auto-replies (account scoped)
   const { data: keywordReplies } = await supabase
     .from("auto_replies")
     .select("*")
+    .eq("account_id", account.id)
     .eq("trigger_type", "keyword")
     .eq("is_active", true);
 
-  if (keywordReplies) {
+  if (keywordReplies?.length) {
+    const lower = (messageContent || "").toLowerCase();
     for (const kr of keywordReplies) {
-      if (kr.trigger_keyword && messageContent.toLowerCase().includes(kr.trigger_keyword.toLowerCase())) {
-        await sendWhatsAppMessage(token, phoneId, from, kr.reply_message);
-        await saveOutgoingMessage(supabase, contact.id, kr.reply_message);
+      if (kr.trigger_keyword && lower.includes(kr.trigger_keyword.toLowerCase())) {
+        const r = await sendText(token, phoneId, from, kr.reply_message);
+        const wid = r?.messages?.[0]?.id || null;
+        await saveOutgoing(supabase, account.id, contact.id, "text", kr.reply_message, null, wid);
         return;
       }
     }
   }
-}
-
-async function sendWhatsAppMessage(token: string, phoneId: string, to: string, text: string) {
-  await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to,
-      type: "text",
-      text: { body: text },
-    }),
-  });
-}
-
-async function saveOutgoingMessage(supabase: any, contactId: string, content: string) {
-  await supabase.from("messages").insert({
-    contact_id: contactId,
-    direction: "outgoing",
-    message_type: "text",
-    content,
-    status: "sent",
-    timestamp: new Date().toISOString(),
-  });
 }

@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface Contact {
   id: string;
+  account_id: string | null;
   phone_number: string;
   name: string | null;
   profile_pic_url: string | null;
@@ -13,6 +14,7 @@ export interface Contact {
 
 export interface Message {
   id: string;
+  account_id: string | null;
   contact_id: string;
   wa_message_id: string | null;
   direction: string;
@@ -35,6 +37,7 @@ export interface WhatsAppSettings {
 
 export interface AutoReply {
   id: string;
+  account_id?: string | null;
   trigger_type: string;
   trigger_keyword: string | null;
   reply_message: string;
@@ -50,13 +53,14 @@ export interface Template {
   status: string | null;
 }
 
-export async function fetchContacts(): Promise<Contact[]> {
+export async function fetchContacts(accountId: string): Promise<Contact[]> {
   const { data, error } = await supabase
     .from("contacts")
     .select("*")
+    .eq("account_id", accountId)
     .order("last_message_at", { ascending: false, nullsFirst: false });
   if (error) throw error;
-  return data || [];
+  return (data as any) || [];
 }
 
 export async function fetchMessages(contactId: string): Promise<Message[]> {
@@ -69,31 +73,16 @@ export async function fetchMessages(contactId: string): Promise<Message[]> {
   return data || [];
 }
 
-export async function fetchSettings(): Promise<Record<string, string>> {
-  const { data, error } = await supabase.from("whatsapp_settings").select("*");
+export async function fetchAutoReplies(accountId: string): Promise<AutoReply[]> {
+  const { data, error } = await supabase
+    .from("auto_replies")
+    .select("*")
+    .eq("account_id", accountId);
   if (error) throw error;
-  const settings: Record<string, string> = {};
-  data?.forEach((s: WhatsAppSettings) => {
-    settings[s.setting_key] = s.setting_value || "";
-  });
-  return settings;
+  return (data as any) || [];
 }
 
-export async function updateSetting(key: string, value: string) {
-  const { error } = await supabase
-    .from("whatsapp_settings")
-    .update({ setting_value: value })
-    .eq("setting_key", key);
-  if (error) throw error;
-}
-
-export async function fetchAutoReplies(): Promise<AutoReply[]> {
-  const { data, error } = await supabase.from("auto_replies").select("*");
-  if (error) throw error;
-  return data || [];
-}
-
-export async function upsertAutoReply(reply: Partial<AutoReply>) {
+export async function upsertAutoReply(reply: Partial<AutoReply> & { account_id?: string }) {
   if (reply.id) {
     const { error } = await supabase
       .from("auto_replies")
@@ -111,21 +100,25 @@ export async function deleteAutoReply(id: string) {
   if (error) throw error;
 }
 
-export async function fetchTemplates(): Promise<Template[]> {
-  const { data, error } = await supabase.from("whatsapp_templates").select("*");
+export async function fetchTemplates(accountId: string): Promise<Template[]> {
+  const { data, error } = await supabase
+    .from("whatsapp_templates")
+    .select("*")
+    .eq("account_id", accountId);
   if (error) throw error;
-  return data || [];
+  return (data as any) || [];
 }
 
-export async function sendTextMessage(to: string, message: string, contactId: string) {
+export async function sendTextMessage(accountId: string, to: string, message: string, contactId: string) {
   const { data, error } = await supabase.functions.invoke("whatsapp-send", {
-    body: { action: "send_text", to, message, contact_id: contactId },
+    body: { account_id: accountId, action: "send_text", to, message, contact_id: contactId },
   });
   if (error) throw error;
   return data;
 }
 
 export async function sendMediaMessage(
+  accountId: string,
   to: string,
   mediaType: string,
   mediaUrl: string,
@@ -136,6 +129,7 @@ export async function sendMediaMessage(
 ) {
   const { data, error } = await supabase.functions.invoke("whatsapp-send", {
     body: {
+      account_id: accountId,
       action: "send_media",
       to,
       media_type: mediaType,
@@ -151,6 +145,7 @@ export async function sendMediaMessage(
 }
 
 export async function sendTemplateMessage(
+  accountId: string,
   to: string,
   templateName: string,
   language: string,
@@ -159,6 +154,7 @@ export async function sendTemplateMessage(
 ) {
   const { data, error } = await supabase.functions.invoke("whatsapp-send", {
     body: {
+      account_id: accountId,
       action: "send_template",
       to,
       template_name: templateName,
@@ -183,24 +179,43 @@ export function isWindowOpen(contact: Contact): boolean {
   return new Date(contact.window_expires_at) > new Date();
 }
 
-export function subscribeToMessages(callback: (payload: any) => void) {
+export function subscribeToMessages(accountId: string, callback: (payload: any) => void) {
   return supabase
-    .channel("messages-realtime")
+    .channel(`messages-realtime-${accountId}`)
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "messages" },
+      { event: "*", schema: "public", table: "messages", filter: `account_id=eq.${accountId}` },
       callback
     )
     .subscribe();
 }
 
-export function subscribeToContacts(callback: (payload: any) => void) {
+export function subscribeToContacts(accountId: string, callback: (payload: any) => void) {
   return supabase
-    .channel("contacts-realtime")
+    .channel(`contacts-realtime-${accountId}`)
     .on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "contacts" },
+      { event: "*", schema: "public", table: "contacts", filter: `account_id=eq.${accountId}` },
       callback
     )
     .subscribe();
+}
+
+/**
+ * Upload a file (e.g. recorded audio, image, video, doc) to the account's folder
+ * in the whatsapp-media storage bucket and return its public URL.
+ */
+export async function uploadAccountMedia(
+  accountId: string,
+  file: Blob,
+  filename: string,
+  contentType: string
+): Promise<string> {
+  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${accountId}/outgoing/${Date.now()}_${safeName}`;
+  const { error } = await supabase.storage
+    .from("whatsapp-media")
+    .upload(path, file, { contentType, upsert: false });
+  if (error) throw error;
+  return supabase.storage.from("whatsapp-media").getPublicUrl(path).data.publicUrl;
 }
