@@ -44,6 +44,19 @@ const Index = () => {
     if (!selectedContactRef.current || incoming.contact_id !== selectedContactRef.current.id) return;
 
     setMessages((prev) => {
+      if (incoming.id.startsWith("pending-")) {
+        const existingPendingIndex = prev.findIndex((m) => m.id === incoming.id);
+        if (existingPendingIndex >= 0) {
+          const next = [...prev];
+          next[existingPendingIndex] = { ...next[existingPendingIndex], ...incoming };
+          return next;
+        }
+
+        return [...prev, incoming].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        );
+      }
+
       const existingIndex = prev.findIndex((m) => m.id === incoming.id || (!!incoming.wa_message_id && m.wa_message_id === incoming.wa_message_id));
       if (existingIndex >= 0) {
         const next = [...prev];
