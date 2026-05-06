@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from "react";
+import { flushSync } from "react-dom";
 import {
   Contact,
   Message,
+  deleteContactChat,
   isWindowOpen,
   sendTextMessage,
   sendMediaMessage,
@@ -10,22 +12,33 @@ import {
   Template,
 } from "@/lib/whatsapp";
 import {
-  ArrowLeft, Send, Paperclip, Image as ImgIcon, FileText, Video as VideoIcon, Clock, Mic, Smile,
+  ArrowLeft, Send, Paperclip, Image as ImgIcon, FileText, Video as VideoIcon, Clock, Mic, Smile, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MessageBubble } from "./MessageBubble";
 import { TemplateDialog } from "./TemplateDialog";
-import { VoiceRecorder } from "./VoiceRecorder";
+import { VoiceRecorder, VoiceRecorderHandle } from "./VoiceRecorder";
 import { useAccount } from "@/hooks/useAccount";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface ChatAreaProps {
   contact: Contact;
   messages: Message[];
   onBack: () => void;
   onMessageSent: (pendingMessage: Message) => void;
+  onContactDeleted: (contactId: string) => void;
 }
 
-export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaProps) {
+export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDeleted }: ChatAreaProps) {
   const { current: account } = useAccount();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -37,6 +50,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const recorderRef = useRef<VoiceRecorderHandle | null>(null);
   const textValueRef = useRef("");
 
   const windowOpen = isWindowOpen(contact);
@@ -90,6 +104,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
         onMessageSent((response as any).inserted_message);
       }
     } catch (e: any) {
+      onMessageSent({ ...pendingMessage, status: "failed" });
       setText(textValueRef.current || messageText);
       toast.error("Failed to send: " + e.message);
     } finally {
@@ -123,9 +138,18 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
       }
       toast.success("Sent!");
     } catch (e: any) {
+      onMessageSent({
+        ...createPendingMessage({
+          message_type: type,
+          content: "",
+          media_url: localPreviewUrl,
+          media_mime_type: file.type,
+          media_filename: file.name,
+        }),
+        status: "failed",
+      });
       toast.error("Failed: " + e.message);
     } finally {
-      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
       setSending(false);
       setSendingLabel(null);
     }
@@ -135,18 +159,23 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
     setSending(true);
     setSendingLabel("Sending voice...");
     let localUrl: string | null = null;
+    const pendingMessage = createPendingMessage({
+      message_type: "audio",
+      media_url: null,
+      media_mime_type: "audio/ogg",
+    });
     try {
       localUrl = URL.createObjectURL(blob);
       // WhatsApp Cloud API requires plain "audio/ogg" (no codec param) for voice notes.
       const storageMime = "audio/ogg";
       const sendMime = "audio/ogg";
       const cleanBlob = new Blob([blob], { type: storageMime });
-      const pendingMessage = createPendingMessage({
+      onMessageSent({
+        ...pendingMessage,
         message_type: "audio",
         media_url: localUrl,
         media_mime_type: sendMime,
       });
-      onMessageSent(pendingMessage);
       const url = await uploadAccountMedia(
         account.id, cleanBlob, `voice_${Date.now()}.ogg`, storageMime
       );
@@ -160,9 +189,9 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
       setRecording(false);
       toast.success("Voice sent!");
     } catch (e: any) {
+      onMessageSent({ ...pendingMessage, media_url: localUrl, status: "failed" });
       toast.error("Failed: " + e.message);
     } finally {
-      if (localUrl) URL.revokeObjectURL(localUrl);
       setSending(false);
       setSendingLabel(null);
     }
@@ -189,10 +218,21 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
       setShowTemplateDialog(false);
       toast.success("Template sent!");
     } catch (e: any) {
+      onMessageSent({ ...pendingMessage, status: "failed" });
       toast.error("Failed: " + e.message);
     } finally {
       setSending(false);
       setSendingLabel(null);
+    }
+  };
+
+  const handleDeleteChat = async () => {
+    try {
+      await deleteContactChat(contact.id);
+      toast.success("Chat deleted");
+      onContactDeleted(contact.id);
+    } catch (e: any) {
+      toast.error("Delete failed: " + e.message);
     }
   };
 
@@ -213,6 +253,28 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
           <p className="text-xs text-primary-foreground/70 truncate">{contact.phone_number}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <AlertDialog>
+            <button
+              type="button"
+              className="text-primary-foreground/80 hover:text-primary-foreground p-1.5 rounded-full hover:bg-primary-foreground/10"
+            >
+              <Trash2 size={18} />
+            </button>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete this chat?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {contact.name || contact.phone_number} ki puri chat aur number list se remove ho jayega.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleDeleteChat}>
+                  Delete chat
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {windowOpen ? (
             <span className="text-[11px] bg-primary-foreground/20 text-primary-foreground px-2 py-1 rounded-full flex items-center gap-1">
               <Clock size={11} /> 24h
@@ -259,6 +321,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
 
         {recording ? (
           <VoiceRecorder
+            ref={recorderRef}
             onSend={handleVoiceSend}
             onCancel={() => setRecording(false)}
           />
@@ -322,7 +385,10 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
               </button>
             ) : (
               <button
-                onClick={() => setRecording(true)}
+                onClick={() => {
+                  flushSync(() => setRecording(true));
+                  recorderRef.current?.startRecording();
+                }}
                 disabled={!canInteract}
                 className="p-2.5 rounded-full bg-primary text-primary-foreground disabled:opacity-50 shrink-0"
                 title="Record voice message"
