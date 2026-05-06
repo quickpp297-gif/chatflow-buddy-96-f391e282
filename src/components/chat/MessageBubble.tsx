@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { Message } from "@/lib/whatsapp";
-import { Check, CheckCheck, Clock, Download, LoaderCircle } from "lucide-react";
+import { Check, CheckCheck, Clock, Download, LoaderCircle, Pause, Play } from "lucide-react";
 import { format } from "date-fns";
 
 interface MessageBubbleProps {
@@ -9,6 +10,15 @@ interface MessageBubbleProps {
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isOutgoing = message.direction === "outgoing";
   const time = format(new Date(message.timestamp), "HH:mm");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [audioError, setAudioError] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+    };
+  }, []);
 
   const statusIcon = () => {
     if (!isOutgoing) return null;
@@ -56,8 +66,49 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     }
 
     if (message.message_type === "audio" || mimeType.startsWith("audio/")) {
+      const toggleAudio = async () => {
+        if (!audioRef.current) return;
+        if (playing) {
+          audioRef.current.pause();
+          return;
+        }
+
+        try {
+          setAudioError(false);
+          await audioRef.current.play();
+        } catch {
+          setAudioError(true);
+        }
+      };
+
       return (
-        <audio src={message.media_url} controls className="w-full mb-1" preload="metadata" />
+        <div className="mb-1 min-w-[220px] max-w-[320px]">
+          <audio
+            ref={audioRef}
+            src={message.media_url}
+            preload="metadata"
+            className="hidden"
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => setPlaying(false)}
+            onError={() => setAudioError(true)}
+          />
+          <button
+            type="button"
+            onClick={toggleAudio}
+            className="flex w-full items-center gap-3 rounded-full bg-background/60 px-3 py-2 text-left"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              {playing ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-medium">Voice message</span>
+              <span className="block text-xs text-muted-foreground truncate">
+                {audioError ? "Audio load nahi hua" : "Tap to play"}
+              </span>
+            </span>
+          </button>
+        </div>
       );
     }
 
