@@ -33,6 +33,12 @@ Deno.serve(async (req) => {
     const { account_id, action } = body;
     if (!account_id) throw new Error("account_id required");
 
+    const fail = (message: string, details?: unknown, status = 400) =>
+      new Response(JSON.stringify({ error: message, details }), {
+        status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
     // Validate ownership
     const { data: account } = await supabase
       .from("wa_accounts")
@@ -71,6 +77,10 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: message } }),
       });
       const data = await r.json();
+      if (!r.ok || data.error) {
+        console.error("text send failed", data);
+        return fail(data.error?.message || "Text send failed", data.error || data, r.status || 400);
+      }
       if (data.messages?.[0]?.id) {
         await supabase.from("messages").insert({
           account_id, contact_id,
@@ -91,9 +101,14 @@ Deno.serve(async (req) => {
       else if (media_type === "video") payload.video = { link: media_url, caption: caption || "" };
       else if (media_type === "audio") payload.audio = { link: media_url };
       else if (media_type === "document") payload.document = { link: media_url, caption: caption || "", filename: filename || "file" };
+      else return fail("Unsupported media type", { media_type });
 
       const r = await fetch(baseUrl, { method: "POST", headers, body: JSON.stringify(payload) });
       const data = await r.json();
+      if (!r.ok || data.error) {
+        console.error("media send failed", media_type, mime_type, data);
+        return fail(data.error?.message || "Media send failed", data.error || data, r.status || 400);
+      }
       if (data.messages?.[0]?.id) {
         await supabase.from("messages").insert({
           account_id, contact_id,
@@ -116,6 +131,10 @@ Deno.serve(async (req) => {
       if (components) tpl.template.components = components;
       const r = await fetch(baseUrl, { method: "POST", headers, body: JSON.stringify(tpl) });
       const data = await r.json();
+      if (!r.ok || data.error) {
+        console.error("template send failed", data);
+        return fail(data.error?.message || "Template send failed", data.error || data, r.status || 400);
+      }
       if (data.messages?.[0]?.id) {
         await supabase.from("messages").insert({
           account_id, contact_id,
