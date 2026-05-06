@@ -1,5 +1,5 @@
 import { Message } from "@/lib/whatsapp";
-import { Check, CheckCheck, Clock, Download } from "lucide-react";
+import { Check, CheckCheck, Clock, Download, LoaderCircle } from "lucide-react";
 import { format } from "date-fns";
 
 interface MessageBubbleProps {
@@ -20,7 +20,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       case "read":
         return <CheckCheck size={14} className="text-primary" />;
       case "pending":
-        return <Clock size={14} className="text-muted-foreground" />;
+        return <LoaderCircle size={14} className="text-muted-foreground animate-spin" />;
+      case "failed":
+        return <Clock size={14} className="text-destructive" />;
       default:
         return <Check size={14} className="text-muted-foreground" />;
     }
