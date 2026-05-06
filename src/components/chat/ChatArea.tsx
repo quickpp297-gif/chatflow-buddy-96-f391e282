@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Contact,
   Message,
@@ -22,13 +22,14 @@ interface ChatAreaProps {
   contact: Contact;
   messages: Message[];
   onBack: () => void;
-  onMessageSent: () => void;
+  onMessageSent: (pendingMessage: Message) => void;
 }
 
 export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaProps) {
   const { current: account } = useAccount();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendingLabel, setSendingLabel] = useState<string | null>(null);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [showAttach, setShowAttach] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -36,12 +37,38 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const textValueRef = useRef("");
 
   const windowOpen = isWindowOpen(contact);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    textValueRef.current = text;
+  }, [text]);
+
+  const canInteract = windowOpen && !sending;
+
+  const visibleMessages = useMemo(() => messages, [messages]);
+
+  const createPendingMessage = (partial: Partial<Message>): Message => ({
+    id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    account_id: account.id,
+    contact_id: contact.id,
+    wa_message_id: null,
+    direction: "outgoing",
+    message_type: partial.message_type || "text",
+    content: partial.content ?? null,
+    media_url: partial.media_url ?? null,
+    media_mime_type: partial.media_mime_type ?? null,
+    media_filename: partial.media_filename ?? null,
+    template_name: partial.template_name ?? null,
+    template_data: partial.template_data ?? null,
+    status: "pending",
+    timestamp: new Date().toISOString(),
+  });
 
   if (!account) return null;
 
@@ -51,43 +78,62 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
       toast.error("24hr window closed. Send a template first.");
       return;
     }
+    const messageText = text.trim();
     setSending(true);
+    setSendingLabel("Sending message...");
+    setText("");
+    const pendingMessage = createPendingMessage({ content: messageText });
+    onMessageSent(pendingMessage);
     try {
-      await sendTextMessage(account.id, contact.phone_number, text.trim(), contact.id);
-      setText("");
-      onMessageSent();
+      await sendTextMessage(account.id, contact.phone_number, messageText, contact.id);
     } catch (e: any) {
+      setText(textValueRef.current || messageText);
       toast.error("Failed to send: " + e.message);
     } finally {
       setSending(false);
+      setSendingLabel(null);
     }
   };
 
   const handleFileUpload = async (file: File, type: "image" | "video" | "document") => {
     setSending(true);
+    setSendingLabel(`Sending ${type}...`);
     setShowAttach(false);
     try {
       const url = await uploadAccountMedia(account.id, file, file.name, file.type);
+      const pendingMessage = createPendingMessage({
+        message_type: type,
+        content: "",
+        media_url: URL.createObjectURL(file),
+        media_mime_type: file.type,
+        media_filename: file.name,
+      });
+      onMessageSent(pendingMessage);
       await sendMediaMessage(
         account.id, contact.phone_number, type, url,
         "", contact.id, file.type, file.name
       );
-      onMessageSent();
       toast.success("Sent!");
     } catch (e: any) {
       toast.error("Failed: " + e.message);
     } finally {
       setSending(false);
+      setSendingLabel(null);
     }
   };
 
   const handleVoiceSend = async (blob: Blob, mime: string) => {
     setSending(true);
+    setSendingLabel("Sending voice...");
     try {
-      // WhatsApp Cloud API expects audio/ogg with opus codec. Force .ogg extension
-      // and ogg mime so Meta's link-based send accepts it (most browsers record opus,
-      // which is wire-compatible with ogg containers for short clips).
-      const sendMime = "audio/ogg";
+      const localUrl = URL.createObjectURL(blob);
+      const sendMime = mime?.includes("ogg") ? "audio/ogg; codecs=opus" : (mime || "audio/ogg; codecs=opus");
+      const pendingMessage = createPendingMessage({
+        message_type: "audio",
+        media_url: localUrl,
+        media_mime_type: sendMime,
+      });
+      onMessageSent(pendingMessage);
       const url = await uploadAccountMedia(
         account.id, blob, `voice_${Date.now()}.ogg`, sendMime
       );
@@ -96,29 +142,37 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
         "", contact.id, sendMime, undefined
       );
       setRecording(false);
-      onMessageSent();
       toast.success("Voice sent!");
     } catch (e: any) {
       toast.error("Failed: " + e.message);
     } finally {
       setSending(false);
+      setSendingLabel(null);
     }
   };
 
   const handleTemplateSend = async (template: Template) => {
     setSending(true);
+    setSendingLabel("Sending template...");
+    const pendingMessage = createPendingMessage({
+      message_type: "template",
+      content: `Template: ${template.name}`,
+      template_name: template.name,
+      template_data: template.components,
+    });
+    onMessageSent(pendingMessage);
     try {
       await sendTemplateMessage(
         account.id, contact.phone_number, template.name, template.language,
         template.components, contact.id
       );
       setShowTemplateDialog(false);
-      onMessageSent();
       toast.success("Template sent!");
     } catch (e: any) {
       toast.error("Failed: " + e.message);
     } finally {
       setSending(false);
+      setSendingLabel(null);
     }
   };
 
@@ -156,7 +210,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto wa-chat-bg custom-scrollbar px-3 py-2 min-h-0">
-        {messages.map((msg) => (
+        {visibleMessages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
         <div ref={messagesEndRef} />
@@ -177,6 +231,12 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
           </div>
         )}
 
+        {sendingLabel && (
+          <div className="text-center text-xs text-muted-foreground mb-2 bg-secondary py-1.5 rounded">
+            {sendingLabel}
+          </div>
+        )}
+
         {recording ? (
           <VoiceRecorder
             onSend={handleVoiceSend}
@@ -188,7 +248,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
               <button
                 onClick={() => setShowAttach(!showAttach)}
                 className="p-2 rounded-full hover:bg-secondary text-muted-foreground"
-                disabled={!windowOpen}
+                disabled={!canInteract}
               >
                 <Paperclip size={20} />
               </button>
@@ -225,7 +285,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
                 }}
                 placeholder={windowOpen ? "Type a message" : "Window closed - send template"}
-                disabled={!windowOpen}
+                disabled={!canInteract}
                 rows={1}
                 className="w-full resize-none rounded-2xl bg-card px-4 py-2.5 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50 max-h-[120px] border border-border"
                 style={{ minHeight: "40px" }}
@@ -235,7 +295,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
             {text.trim() ? (
               <button
                 onClick={handleSend}
-                disabled={sending || !windowOpen}
+                disabled={!canInteract}
                 className="p-2.5 rounded-full bg-primary text-primary-foreground disabled:opacity-50 shrink-0"
               >
                 <Send size={18} />
@@ -243,7 +303,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
             ) : (
               <button
                 onClick={() => setRecording(true)}
-                disabled={!windowOpen}
+                disabled={!canInteract}
                 className="p-2.5 rounded-full bg-primary text-primary-foreground disabled:opacity-50 shrink-0"
                 title="Record voice message"
               >
