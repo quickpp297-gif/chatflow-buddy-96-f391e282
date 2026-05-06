@@ -5,6 +5,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function json(o: unknown, status = 200) {
+  return new Response(JSON.stringify(o), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -53,12 +60,5 @@ Deno.serve(async (req) => {
   } catch (e: any) {
     console.error("delete user err", e);
     return json({ error: e.message }, 500);
-  }
-
-  function json(o: unknown, status = 200) {
-    return new Response(JSON.stringify(o), {
-      status,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
   }
 });
