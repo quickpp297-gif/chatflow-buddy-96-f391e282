@@ -84,11 +84,16 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
   const handleVoiceSend = async (blob: Blob, mime: string) => {
     setSending(true);
     try {
-      const ext = mime.includes("webm") ? "webm" : mime.includes("ogg") ? "ogg" : mime.includes("mp4") ? "m4a" : "webm";
-      const url = await uploadAccountMedia(account.id, blob, `voice_${Date.now()}.${ext}`, mime);
+      // WhatsApp Cloud API expects audio/ogg with opus codec. Force .ogg extension
+      // and ogg mime so Meta's link-based send accepts it (most browsers record opus,
+      // which is wire-compatible with ogg containers for short clips).
+      const sendMime = "audio/ogg";
+      const url = await uploadAccountMedia(
+        account.id, blob, `voice_${Date.now()}.ogg`, sendMime
+      );
       await sendMediaMessage(
         account.id, contact.phone_number, "audio", url,
-        "", contact.id, mime, undefined
+        "", contact.id, sendMime, undefined
       );
       setRecording(false);
       onMessageSent();
