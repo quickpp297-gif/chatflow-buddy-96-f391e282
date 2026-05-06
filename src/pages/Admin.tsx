@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, ShieldCheck, Trash2, MessageCircle, User as UserIcon } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 interface Profile { id: string; email: string | null; display_name: string | null; created_at: string; }
