@@ -10,6 +10,8 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useAccount } from "@/hooks/useAccount";
 import { Settings, LogOut, ShieldCheck, ChevronDown } from "lucide-react";
+import { ensurePushSubscription, pushSupported } from "@/lib/push";
+import { toast } from "sonner";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -30,6 +32,24 @@ const Index = () => {
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
   }, [user, authLoading, navigate]);
+
+  // Auto-prompt push notifications once per session per account
+  useEffect(() => {
+    if (!user || !account || !pushSupported()) return;
+    const key = `wa_push_prompted_${account.id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    if (Notification.permission === "default") {
+      // Fire on next tick so UI is ready
+      setTimeout(() => {
+        ensurePushSubscription(account.id, user.id).then((sub) => {
+          if (sub) toast.success("Notifications enabled");
+        }).catch(() => {});
+      }, 800);
+    } else if (Notification.permission === "granted") {
+      ensurePushSubscription(account.id, user.id).catch(() => {});
+    }
+  }, [user, account]);
 
   const loadContacts = useCallback(async () => {
     if (!account) { setContacts([]); setLoading(false); return; }
@@ -68,6 +88,13 @@ const Index = () => {
     await markContactRead(c.id);
     loadContacts();
   };
+
+  // Keep selectedContact in sync with latest contacts (for window/unread updates)
+  useEffect(() => {
+    if (!selectedContact) return;
+    const updated = contacts.find((c) => c.id === selectedContact.id);
+    if (updated && updated !== selectedContact) setSelectedContact(updated);
+  }, [contacts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (authLoading || accLoading) {
     return <div className="h-[100dvh] flex items-center justify-center text-muted-foreground">Loading...</div>;
