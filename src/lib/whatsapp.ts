@@ -114,6 +114,7 @@ export async function sendTextMessage(accountId: string, to: string, message: st
     body: { account_id: accountId, action: "send_text", to, message, contact_id: contactId },
   });
   if (error) throw error;
+  if ((data as any)?.error) throw new Error((data as any).error);
   return data;
 }
 
@@ -141,6 +142,7 @@ export async function sendMediaMessage(
     },
   });
   if (error) throw error;
+  if ((data as any)?.error) throw new Error((data as any).error);
   return data;
 }
 
@@ -164,6 +166,7 @@ export async function sendTemplateMessage(
     },
   });
   if (error) throw error;
+  if ((data as any)?.error) throw new Error((data as any).error);
   return data;
 }
 

@@ -33,6 +33,12 @@ Deno.serve(async (req) => {
     const { account_id, action } = body;
     if (!account_id) throw new Error("account_id required");
 
+    const fail = (message: string, details?: unknown, status = 400) =>
+      new Response(JSON.stringify({ error: message, details }), {
+        status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
     // Validate ownership
     const { data: account } = await supabase
       .from("wa_accounts")
@@ -71,17 +77,22 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ messaging_product: "whatsapp", to, type: "text", text: { body: message } }),
       });
       const data = await r.json();
+      if (!r.ok || data.error) {
+        console.error("text send failed", data);
+        return fail(data.error?.message || "Text send failed", data.error || data, r.status || 400);
+      }
       if (data.messages?.[0]?.id) {
-        await supabase.from("messages").insert({
+        const { data: insertedMessage } = await supabase.from("messages").insert({
           account_id, contact_id,
           wa_message_id: data.messages[0].id,
           direction: "outgoing", message_type: "text",
           content: message, status: "sent",
           timestamp: new Date().toISOString(),
-        });
+        }).select().single();
         await supabase.from("contacts").update({ last_message_at: new Date().toISOString() }).eq("id", contact_id);
+        return ok({ success: true, data, inserted_message: insertedMessage || null });
       }
-      return ok({ success: true, data });
+      return ok({ success: true, data, inserted_message: null });
     }
 
     if (action === "send_media") {
@@ -91,20 +102,26 @@ Deno.serve(async (req) => {
       else if (media_type === "video") payload.video = { link: media_url, caption: caption || "" };
       else if (media_type === "audio") payload.audio = { link: media_url };
       else if (media_type === "document") payload.document = { link: media_url, caption: caption || "", filename: filename || "file" };
+      else return fail("Unsupported media type", { media_type });
 
       const r = await fetch(baseUrl, { method: "POST", headers, body: JSON.stringify(payload) });
       const data = await r.json();
+      if (!r.ok || data.error) {
+        console.error("media send failed", media_type, mime_type, data);
+        return fail(data.error?.message || "Media send failed", data.error || data, r.status || 400);
+      }
       if (data.messages?.[0]?.id) {
-        await supabase.from("messages").insert({
+        const { data: insertedMessage } = await supabase.from("messages").insert({
           account_id, contact_id,
           wa_message_id: data.messages[0].id,
           direction: "outgoing", message_type: media_type,
           content: caption || "", media_url, media_mime_type: mime_type || null, media_filename: filename || null,
           status: "sent", timestamp: new Date().toISOString(),
-        });
+        }).select().single();
         await supabase.from("contacts").update({ last_message_at: new Date().toISOString() }).eq("id", contact_id);
+        return ok({ success: true, data, inserted_message: insertedMessage || null });
       }
-      return ok({ success: true, data });
+      return ok({ success: true, data, inserted_message: null });
     }
 
     if (action === "send_template") {
@@ -116,18 +133,23 @@ Deno.serve(async (req) => {
       if (components) tpl.template.components = components;
       const r = await fetch(baseUrl, { method: "POST", headers, body: JSON.stringify(tpl) });
       const data = await r.json();
+      if (!r.ok || data.error) {
+        console.error("template send failed", data);
+        return fail(data.error?.message || "Template send failed", data.error || data, r.status || 400);
+      }
       if (data.messages?.[0]?.id) {
-        await supabase.from("messages").insert({
+        const { data: insertedMessage } = await supabase.from("messages").insert({
           account_id, contact_id,
           wa_message_id: data.messages[0].id,
           direction: "outgoing", message_type: "template",
           content: `Template: ${template_name}`,
           template_name, template_data: components || null,
           status: "sent", timestamp: new Date().toISOString(),
-        });
+        }).select().single();
         await supabase.from("contacts").update({ last_message_at: new Date().toISOString() }).eq("id", contact_id);
+        return ok({ success: true, data, inserted_message: insertedMessage || null });
       }
-      return ok({ success: true, data });
+      return ok({ success: true, data, inserted_message: null });
     }
 
     return new Response(JSON.stringify({ error: "Invalid action" }), {

@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Mic, Square, Send, Trash2, Play, Pause } from "lucide-react";
+import Recorder from "opus-recorder";
+import encoderPath from "opus-recorder/dist/encoderWorker.min.js?url";
 
 interface Props {
   onSend: (blob: Blob, mime: string) => Promise<void> | void;
@@ -8,14 +10,14 @@ interface Props {
 
 export function VoiceRecorder({ onSend, onCancel }: Props) {
   const [recording, setRecording] = useState(true);
-  const [paused, setPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
-  const mediaRef = useRef<MediaRecorder | null>(null);
+  const [initializing, setInitializing] = useState(true);
+  const [sending, setSending] = useState(false);
+  const recorderRef = useRef<any | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<BlobPart[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tickRef = useRef<number | null>(null);
 
@@ -24,19 +26,32 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
-        // WhatsApp Cloud API accepts audio/ogg with opus. Prefer ogg.
-        const mimeOptions = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
-        const mime = mimeOptions.find((m) => MediaRecorder.isTypeSupported(m)) || "";
-        const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-        mediaRef.current = rec;
-        rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-        rec.onstop = () => {
-          const b = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-          setBlob(b);
-          setPreviewUrl(URL.createObjectURL(b));
-          stream.getTracks().forEach((t) => t.stop());
+        const rec = new Recorder({
+          encoderPath,
+          streamPages: false,
+          numberOfChannels: 1,
+          encoderSampleRate: 16000,
+          encoderBitRate: 24000,
+          sourceNode: undefined,
+        });
+        recorderRef.current = rec;
+        rec.ondataavailable = (typedArray: Uint8Array) => {
+          const arrayBuffer = new ArrayBuffer(typedArray.byteLength);
+          new Uint8Array(arrayBuffer).set(typedArray);
+          const recordedBlob = new Blob([arrayBuffer], { type: "audio/ogg; codecs=opus" });
+          setBlob(recordedBlob);
+          setPreviewUrl((current) => {
+            if (current) URL.revokeObjectURL(current);
+            return URL.createObjectURL(recordedBlob);
+          });
+          setInitializing(false);
         };
+        rec.onstop = () => {
+          stream.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+        };
+        await rec.initStream(stream);
         rec.start();
+        setInitializing(false);
         tickRef.current = window.setInterval(() => setSeconds((s) => s + 1), 1000);
       } catch (err) {
         console.error(err);
@@ -45,20 +60,22 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
     })();
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
+      recorderRef.current?.close?.();
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      if (audioRef.current) audioRef.current.pause();
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const stop = () => {
+  const stop = async () => {
     setRecording(false);
     if (tickRef.current) clearInterval(tickRef.current);
-    mediaRef.current?.stop();
+    await recorderRef.current?.stop?.();
   };
 
   const cancel = () => {
-    if (mediaRef.current && mediaRef.current.state !== "inactive") mediaRef.current.stop();
+    recorderRef.current?.close?.();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     onCancel();
   };
@@ -71,7 +88,12 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
 
   const send = async () => {
     if (!blob) return;
-    await onSend(blob, blob.type || "audio/webm");
+    setSending(true);
+    try {
+      await onSend(blob, blob.type || "audio/ogg; codecs=opus");
+    } finally {
+      setSending(false);
+    }
   };
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -86,8 +108,8 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
         <>
           <span className="w-2.5 h-2.5 rounded-full bg-destructive animate-pulse" />
           <span className="text-sm font-mono flex-1">{fmt(seconds)}</span>
-          <span className="text-xs text-muted-foreground">Recording...</span>
-          <button onClick={stop} className="p-2 rounded-full bg-primary text-primary-foreground">
+          <span className="text-xs text-muted-foreground">{initializing ? "Mic starting..." : "Recording..."}</span>
+          <button onClick={stop} disabled={initializing} className="p-2 rounded-full bg-primary text-primary-foreground disabled:opacity-50">
             <Square size={16} />
           </button>
         </>
@@ -109,7 +131,8 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
           <span className="text-sm font-mono flex-1">{fmt(seconds)}</span>
           <button
             onClick={send}
-            className="p-2 rounded-full bg-primary text-primary-foreground"
+            disabled={sending || !blob}
+            className="p-2 rounded-full bg-primary text-primary-foreground disabled:opacity-50"
           >
             <Send size={16} />
           </button>
