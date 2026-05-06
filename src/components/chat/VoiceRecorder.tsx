@@ -36,10 +36,8 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
         });
         recorderRef.current = rec;
         rec.ondataavailable = (typedArray: Uint8Array) => {
-          const arrayBuffer = typedArray.buffer.slice(
-            typedArray.byteOffset,
-            typedArray.byteOffset + typedArray.byteLength,
-          );
+          const arrayBuffer = new ArrayBuffer(typedArray.byteLength);
+          new Uint8Array(arrayBuffer).set(typedArray);
           const recordedBlob = new Blob([arrayBuffer], { type: "audio/ogg; codecs=opus" });
           setBlob(recordedBlob);
           setPreviewUrl((current) => {
