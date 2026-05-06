@@ -137,7 +137,10 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
     let localUrl: string | null = null;
     try {
       localUrl = URL.createObjectURL(blob);
-      const sendMime = mime?.includes("ogg") ? "audio/ogg; codecs=opus" : (mime || "audio/ogg; codecs=opus");
+      // WhatsApp Cloud API requires plain "audio/ogg" (no codec param) for voice notes.
+      const storageMime = "audio/ogg";
+      const sendMime = "audio/ogg";
+      const cleanBlob = new Blob([blob], { type: storageMime });
       const pendingMessage = createPendingMessage({
         message_type: "audio",
         media_url: localUrl,
@@ -145,7 +148,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
       });
       onMessageSent(pendingMessage);
       const url = await uploadAccountMedia(
-        account.id, blob, `voice_${Date.now()}.ogg`, sendMime
+        account.id, cleanBlob, `voice_${Date.now()}.ogg`, storageMime
       );
       const response = await sendMediaMessage(
         account.id, contact.phone_number, "audio", url,
