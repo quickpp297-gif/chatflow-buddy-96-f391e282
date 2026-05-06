@@ -85,7 +85,10 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
     const pendingMessage = createPendingMessage({ content: messageText });
     onMessageSent(pendingMessage);
     try {
-      await sendTextMessage(account.id, contact.phone_number, messageText, contact.id);
+      const response = await sendTextMessage(account.id, contact.phone_number, messageText, contact.id);
+      if ((response as any)?.inserted_message) {
+        onMessageSent((response as any).inserted_message);
+      }
     } catch (e: any) {
       setText(textValueRef.current || messageText);
       toast.error("Failed to send: " + e.message);
@@ -99,24 +102,30 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
     setSending(true);
     setSendingLabel(`Sending ${type}...`);
     setShowAttach(false);
+    let localPreviewUrl: string | null = null;
     try {
-      const url = await uploadAccountMedia(account.id, file, file.name, file.type);
+      localPreviewUrl = URL.createObjectURL(file);
       const pendingMessage = createPendingMessage({
         message_type: type,
         content: "",
-        media_url: URL.createObjectURL(file),
+        media_url: localPreviewUrl,
         media_mime_type: file.type,
         media_filename: file.name,
       });
       onMessageSent(pendingMessage);
-      await sendMediaMessage(
+      const url = await uploadAccountMedia(account.id, file, file.name, file.type);
+      const response = await sendMediaMessage(
         account.id, contact.phone_number, type, url,
         "", contact.id, file.type, file.name
       );
+      if ((response as any)?.inserted_message) {
+        onMessageSent((response as any).inserted_message);
+      }
       toast.success("Sent!");
     } catch (e: any) {
       toast.error("Failed: " + e.message);
     } finally {
+      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
       setSending(false);
       setSendingLabel(null);
     }
@@ -125,8 +134,9 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
   const handleVoiceSend = async (blob: Blob, mime: string) => {
     setSending(true);
     setSendingLabel("Sending voice...");
+    let localUrl: string | null = null;
     try {
-      const localUrl = URL.createObjectURL(blob);
+      localUrl = URL.createObjectURL(blob);
       const sendMime = mime?.includes("ogg") ? "audio/ogg; codecs=opus" : (mime || "audio/ogg; codecs=opus");
       const pendingMessage = createPendingMessage({
         message_type: "audio",
@@ -137,15 +147,19 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
       const url = await uploadAccountMedia(
         account.id, blob, `voice_${Date.now()}.ogg`, sendMime
       );
-      await sendMediaMessage(
+      const response = await sendMediaMessage(
         account.id, contact.phone_number, "audio", url,
         "", contact.id, sendMime, undefined
       );
+      if ((response as any)?.inserted_message) {
+        onMessageSent((response as any).inserted_message);
+      }
       setRecording(false);
       toast.success("Voice sent!");
     } catch (e: any) {
       toast.error("Failed: " + e.message);
     } finally {
+      if (localUrl) URL.revokeObjectURL(localUrl);
       setSending(false);
       setSendingLabel(null);
     }
@@ -162,10 +176,13 @@ export function ChatArea({ contact, messages, onBack, onMessageSent }: ChatAreaP
     });
     onMessageSent(pendingMessage);
     try {
-      await sendTemplateMessage(
+      const response = await sendTemplateMessage(
         account.id, contact.phone_number, template.name, template.language,
         template.components, contact.id
       );
+      if ((response as any)?.inserted_message) {
+        onMessageSent((response as any).inserted_message);
+      }
       setShowTemplateDialog(false);
       toast.success("Template sent!");
     } catch (e: any) {
