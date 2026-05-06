@@ -52,7 +52,8 @@ export default function Auth() {
           <div className="w-16 h-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center mb-3">
             <MessageCircle size={32} />
           </div>
-          <h1 className="text-2xl font-bold">WhatsApp Cloud Suite</h1>
+          <h1 className="text-2xl font-bold">FinoXPro</h1>
+          <p className="text-xs text-muted-foreground">WhatsApp Cloud Suite</p>
           <p className="text-sm text-muted-foreground mt-1">
             {mode === "login" ? "Sign in to your dashboard" : "Create your account"}
           </p>
