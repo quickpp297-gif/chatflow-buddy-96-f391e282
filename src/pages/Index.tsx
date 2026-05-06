@@ -237,6 +237,12 @@ const Index = () => {
             contact={selectedContact}
             messages={messages}
             onBack={() => { setShowContactList(true); setSelectedContact(null); }}
+            onContactDeleted={(contactId) => {
+              setContacts((prev) => prev.filter((item) => item.id !== contactId));
+              setMessages([]);
+              setSelectedContact(null);
+              setShowContactList(true);
+            }}
             onMessageSent={(pendingMessage) => {
               mergeRealtimeMessage(pendingMessage);
               setContacts((prev) => prev.map((item) => item.id === selectedContact.id ? {
