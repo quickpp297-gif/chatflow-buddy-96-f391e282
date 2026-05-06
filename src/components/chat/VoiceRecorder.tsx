@@ -24,7 +24,8 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
-        const mimeOptions = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"];
+        // WhatsApp Cloud API accepts audio/ogg with opus. Prefer ogg.
+        const mimeOptions = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
         const mime = mimeOptions.find((m) => MediaRecorder.isTypeSupported(m)) || "";
         const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
         mediaRef.current = rec;
