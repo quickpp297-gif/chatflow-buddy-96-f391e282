@@ -27,6 +27,50 @@ const Index = () => {
   const [showMenu, setShowMenu] = useState(false);
   const selectedContactRef = useRef<Contact | null>(null);
 
+  const upsertContact = useCallback((incoming: Contact) => {
+    setContacts((prev) => {
+      const next = prev.filter((c) => c.id !== incoming.id);
+      next.unshift(incoming);
+      next.sort((a, b) => {
+        const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return bTime - aTime;
+      });
+      return next;
+    });
+  }, []);
+
+  const mergeRealtimeMessage = useCallback((incoming: Message) => {
+    if (!selectedContactRef.current || incoming.contact_id !== selectedContactRef.current.id) return;
+
+    setMessages((prev) => {
+      const existingIndex = prev.findIndex((m) => m.id === incoming.id || (!!incoming.wa_message_id && m.wa_message_id === incoming.wa_message_id));
+      if (existingIndex >= 0) {
+        const next = [...prev];
+        next[existingIndex] = { ...next[existingIndex], ...incoming };
+        return next;
+      }
+
+      if (incoming.direction === "outgoing") {
+        const pendingIndex = prev.findIndex((m) => {
+          if (m.status !== "pending" || m.direction !== "outgoing" || m.message_type !== incoming.message_type) return false;
+          if ((m.content || "") !== (incoming.content || "")) return false;
+          if ((m.media_filename || "") !== (incoming.media_filename || "")) return false;
+          return true;
+        });
+        if (pendingIndex >= 0) {
+          const next = [...prev];
+          next[pendingIndex] = { ...next[pendingIndex], ...incoming, status: incoming.status || "sent" };
+          return next;
+        }
+      }
+
+      return [...prev, incoming].sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      );
+    });
+  }, []);
+
   useEffect(() => { selectedContactRef.current = selectedContact; }, [selectedContact]);
 
   useEffect(() => {
@@ -71,22 +115,40 @@ const Index = () => {
     loadContacts();
 
     const msgSub = subscribeToMessages(account.id, (payload: any) => {
-      const newMsg = payload.new as Message;
-      if (selectedContactRef.current && newMsg?.contact_id === selectedContactRef.current.id) {
-        setMessages((prev) => prev.find((m) => m.id === newMsg.id) ? prev : [...prev, newMsg]);
+      if (payload.eventType === "DELETE") return;
+
+      const nextMessage = (payload.new || payload.old) as Message | undefined;
+      if (nextMessage) {
+        mergeRealtimeMessage(nextMessage);
       }
-      loadContacts();
+      if (payload.eventType === "INSERT" && nextMessage?.direction === "incoming" && document.visibilityState === "visible") {
+        toast.info("New message received");
+      }
     });
-    const contactSub = subscribeToContacts(account.id, () => loadContacts());
+    const contactSub = subscribeToContacts(account.id, (payload: any) => {
+      if (payload.eventType === "DELETE") {
+        const deletedId = payload.old?.id as string | undefined;
+        if (!deletedId) return;
+        setContacts((prev) => prev.filter((c) => c.id !== deletedId));
+        return;
+      }
+
+      const nextContact = payload.new as Contact | undefined;
+      if (!nextContact) return;
+      upsertContact(nextContact);
+      if (selectedContactRef.current?.id === nextContact.id) {
+        setSelectedContact(nextContact);
+      }
+    });
     return () => { msgSub.unsubscribe(); contactSub.unsubscribe(); };
-  }, [account, loadContacts]);
+  }, [account, loadContacts, mergeRealtimeMessage, upsertContact]);
 
   const handleSelectContact = async (c: Contact) => {
     setSelectedContact(c);
     setShowContactList(false);
     await loadMessages(c.id);
     await markContactRead(c.id);
-    loadContacts();
+    setContacts((prev) => prev.map((item) => item.id === c.id ? { ...item, unread_count: 0 } : item));
   };
 
   // Keep selectedContact in sync with latest contacts (for window/unread updates)
@@ -175,7 +237,17 @@ const Index = () => {
             contact={selectedContact}
             messages={messages}
             onBack={() => { setShowContactList(true); setSelectedContact(null); }}
-            onMessageSent={() => { loadMessages(selectedContact.id); loadContacts(); }}
+            onMessageSent={(pendingMessage) => {
+              mergeRealtimeMessage(pendingMessage);
+              setContacts((prev) => prev.map((item) => item.id === selectedContact.id ? {
+                ...item,
+                last_message_at: pendingMessage.timestamp,
+              } : item).sort((a, b) => {
+                const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+                const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+                return bTime - aTime;
+              }));
+            }}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center wa-chat-bg">
