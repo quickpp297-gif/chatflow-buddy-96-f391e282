@@ -1,0 +1,145 @@
+============================================================
+ WhatsApp Cloud Chatflow — cPanel + Self-Hosted Supabase Setup
+============================================================
+
+Yeh guide step-by-step batata hai ki aap is app ko apne cPanel hosting
+aur apne khud ke Supabase server par kaise host karein.
+
+------------------------------------------------------------
+ Part A — Self-Hosted Supabase (apna backend)
+------------------------------------------------------------
+
+Aapko ek VPS chahiye (DigitalOcean / Hetzner / Contabo / AWS).
+cPanel shared hosting par Supabase NAHI chal sakta — Docker chahiye.
+
+1) VPS me Docker + docker-compose install karein.
+
+2) Supabase official self-host repo clone karein:
+   git clone --depth 1 https://github.com/supabase/supabase
+   cd supabase/docker
+   cp .env.example .env
+
+3) .env file edit karein:
+   POSTGRES_PASSWORD=<strong-password>
+   JWT_SECRET=<random-40-char-string>
+   ANON_KEY=<generate from https://supabase.com/docs/guides/self-hosting/docker>
+   SERVICE_ROLE_KEY=<generate same way>
+   SITE_URL=https://yourdomain.com
+   API_EXTERNAL_URL=https://api.yourdomain.com
+   STUDIO_PORT=3000
+
+4) Reverse proxy (Nginx) setup karein taaki:
+   - https://api.yourdomain.com  -> port 8000  (Kong / Supabase API)
+   - https://studio.yourdomain.com -> port 3000 (Supabase Studio)
+   SSL ke liye certbot use karein.
+
+5) Start: docker compose up -d
+
+6) Studio kholein, SQL Editor me ye file run karein:
+   supabase/migrations/<timestamp>_*.sql  (project ke andar saari migrations)
+   Migrations chronological order me apply karein.
+
+7) Storage bucket banayein:
+   - Name: whatsapp-media
+   - Public: YES
+
+8) Auth settings:
+   - Site URL: https://yourdomain.com
+   - Email confirmation: ON (recommended)
+
+9) Edge Functions deploy karein:
+   - Supabase CLI install: npm i -g supabase
+   - supabase login
+   - supabase link --project-ref <self-hosted-ref>  (ya direct deploy)
+   - supabase functions deploy whatsapp-webhook --no-verify-jwt
+   - supabase functions deploy whatsapp-send
+
+10) Edge Function secrets set karein (sirf agar custom secrets chahiye —
+    project me VAPID hardcoded hai, WhatsApp creds DB me hain):
+    Aapko alag se kuch set karne ki zaroorat NAHI hai.
+
+------------------------------------------------------------
+ Part B — Frontend cPanel par Host Karna
+------------------------------------------------------------
+
+1) Local machine ya is editor me .env update karein:
+   VITE_SUPABASE_URL=https://api.yourdomain.com
+   VITE_SUPABASE_PUBLISHABLE_KEY=<aapka self-hosted ANON_KEY>
+   VITE_SUPABASE_PROJECT_ID=<koi bhi short id, sirf label hai>
+
+2) Production build banayein:
+   npm install
+   npm run build
+
+   "dist/" folder generate hoga.
+
+3) cPanel ke File Manager se public_html (ya jis subdomain par chahiye)
+   me "dist/" ka SAARA content upload karein.
+
+4) SPA routing ke liye public_html/.htaccess banayein:
+
+   <IfModule mod_rewrite.c>
+     RewriteEngine On
+     RewriteBase /
+     RewriteRule ^index\.html$ - [L]
+     RewriteCond %{REQUEST_FILENAME} !-f
+     RewriteCond %{REQUEST_FILENAME} !-d
+     RewriteRule . /index.html [L]
+   </IfModule>
+
+5) HTTPS enable karein (cPanel -> SSL/TLS Status -> AutoSSL).
+   Push notifications ke liye HTTPS ZAROORI hai.
+
+------------------------------------------------------------
+ Part C — WhatsApp Cloud API Connect
+------------------------------------------------------------
+
+1) App khol kar Sign Up karein.
+2) Settings -> Account tab me jaayein:
+   - Phone Number ID
+   - Permanent Access Token
+   paste karein.
+3) Settings -> Webhook tab kholein:
+   - Callback URL aur Verify Token copy karein.
+4) Meta Developer Console -> Your App -> WhatsApp -> Configuration:
+   - Callback URL paste karein
+   - Verify Token paste karein
+   - "messages" field subscribe karein
+5) Test message bhejein WhatsApp number par.
+
+------------------------------------------------------------
+ Part D — Push Notifications (already setup hai)
+------------------------------------------------------------
+
+- Pehli baar app khulne par browser permission popup aayega.
+- "Allow" karein.
+- VAPID keys app me hardcoded hain — alag config nahi chahiye.
+- Chrome band hone par bhi background me notifications aayenge
+  (jab tak browser process running hai / Android me hamesha).
+
+------------------------------------------------------------
+ Part E — Voice / Media Notes
+------------------------------------------------------------
+
+- Voice messages OGG (Opus) format me bhejte hain — WhatsApp ke saath
+  compatible.
+- Image / Video / Document — sab Supabase storage me upload hote hain
+  aur public URL Meta Cloud API ko bhej diya jata hai.
+
+------------------------------------------------------------
+ Troubleshooting
+------------------------------------------------------------
+
+- Push nahi aa rahi -> HTTPS check karein, browser notification permission
+  Settings me check karein, aur sw.js file public folder me hai confirm karein.
+- Webhook verify fail -> Verify Token exact match hona chahiye.
+- Voice nahi ja raha -> Browser console me error dekho. Firefox me ogg
+  natively record hota hai, Chrome me webm-opus jata hai (ogg label se
+  Meta usually accept karta hai).
+- New message dikhne me delay -> Supabase Realtime "messages" aur
+  "contacts" tables ke liye enable hai? Studio -> Database -> Replication
+  check karein.
+
+============================================================
+ Done! Aapka apna WhatsApp Cloud Chatflow ready hai 🎉
+============================================================
