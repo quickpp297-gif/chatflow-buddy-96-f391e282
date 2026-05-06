@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { Square, Send, Trash2, Play, Pause, LoaderCircle } from "lucide-react";
+import { forwardRef, useState, useRef, useEffect, useImperativeHandle } from "react";
+import { Mic, Square, Send, Trash2, Play, Pause, LoaderCircle } from "lucide-react";
 import Recorder from "opus-recorder";
 import encoderPath from "opus-recorder/dist/encoderWorker.min.js?url";
 
@@ -8,7 +8,11 @@ interface Props {
   onCancel: () => void;
 }
 
-export function VoiceRecorder({ onSend, onCancel }: Props) {
+export interface VoiceRecorderHandle {
+  startRecording: () => Promise<void>;
+}
+
+export const VoiceRecorder = forwardRef<VoiceRecorderHandle, Props>(function VoiceRecorder({ onSend, onCancel }, ref) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [blob, setBlob] = useState<Blob | null>(null);
@@ -22,6 +26,10 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const tickRef = useRef<number | null>(null);
 
+  useImperativeHandle(ref, () => ({
+    startRecording: start,
+  }));
+
   useEffect(() => {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
@@ -34,6 +42,7 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
   }, [previewUrl]);
 
   const start = async () => {
+    if (initializing || recording) return;
     setError(null);
     setInitializing(true);
 
@@ -180,7 +189,7 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium">Voice message</p>
             <p className="text-xs text-muted-foreground truncate">
-              {error || (initializing ? "Mic starting..." : "Tap send button ke paas wale mic se start hota hai, yahan confirm karo.")}
+              {error || (initializing ? "Mic starting..." : "Tap to start recording")}
             </p>
           </div>
           <button
@@ -188,10 +197,10 @@ export function VoiceRecorder({ onSend, onCancel }: Props) {
             disabled={initializing}
             className="p-2 rounded-full bg-primary text-primary-foreground disabled:opacity-50"
           >
-            {initializing ? <LoaderCircle size={16} className="animate-spin" /> : <Square size={16} className="rotate-45" />}
+            {initializing ? <LoaderCircle size={16} className="animate-spin" /> : <Mic size={16} />}
           </button>
         </>
       )}
     </div>
   );
-}
+});
