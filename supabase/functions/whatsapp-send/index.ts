@@ -82,16 +82,17 @@ Deno.serve(async (req) => {
         return fail(data.error?.message || "Text send failed", data.error || data, r.status || 400);
       }
       if (data.messages?.[0]?.id) {
-        await supabase.from("messages").insert({
+        const { data: insertedMessage } = await supabase.from("messages").insert({
           account_id, contact_id,
           wa_message_id: data.messages[0].id,
           direction: "outgoing", message_type: "text",
           content: message, status: "sent",
           timestamp: new Date().toISOString(),
-        });
+        }).select().single();
         await supabase.from("contacts").update({ last_message_at: new Date().toISOString() }).eq("id", contact_id);
+        return ok({ success: true, data, inserted_message: insertedMessage || null });
       }
-      return ok({ success: true, data });
+      return ok({ success: true, data, inserted_message: null });
     }
 
     if (action === "send_media") {
@@ -110,16 +111,17 @@ Deno.serve(async (req) => {
         return fail(data.error?.message || "Media send failed", data.error || data, r.status || 400);
       }
       if (data.messages?.[0]?.id) {
-        await supabase.from("messages").insert({
+        const { data: insertedMessage } = await supabase.from("messages").insert({
           account_id, contact_id,
           wa_message_id: data.messages[0].id,
           direction: "outgoing", message_type: media_type,
           content: caption || "", media_url, media_mime_type: mime_type || null, media_filename: filename || null,
           status: "sent", timestamp: new Date().toISOString(),
-        });
+        }).select().single();
         await supabase.from("contacts").update({ last_message_at: new Date().toISOString() }).eq("id", contact_id);
+        return ok({ success: true, data, inserted_message: insertedMessage || null });
       }
-      return ok({ success: true, data });
+      return ok({ success: true, data, inserted_message: null });
     }
 
     if (action === "send_template") {
@@ -136,17 +138,18 @@ Deno.serve(async (req) => {
         return fail(data.error?.message || "Template send failed", data.error || data, r.status || 400);
       }
       if (data.messages?.[0]?.id) {
-        await supabase.from("messages").insert({
+        const { data: insertedMessage } = await supabase.from("messages").insert({
           account_id, contact_id,
           wa_message_id: data.messages[0].id,
           direction: "outgoing", message_type: "template",
           content: `Template: ${template_name}`,
           template_name, template_data: components || null,
           status: "sent", timestamp: new Date().toISOString(),
-        });
+        }).select().single();
         await supabase.from("contacts").update({ last_message_at: new Date().toISOString() }).eq("id", contact_id);
+        return ok({ success: true, data, inserted_message: insertedMessage || null });
       }
-      return ok({ success: true, data });
+      return ok({ success: true, data, inserted_message: null });
     }
 
     return new Response(JSON.stringify({ error: "Invalid action" }), {
