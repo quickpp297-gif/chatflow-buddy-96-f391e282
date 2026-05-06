@@ -177,6 +177,22 @@ export async function markContactRead(contactId: string) {
     .eq("id", contactId);
 }
 
+export async function deleteContactChat(contactId: string) {
+  const { error: messagesError } = await supabase
+    .from("messages")
+    .delete()
+    .eq("contact_id", contactId);
+
+  if (messagesError) throw messagesError;
+
+  const { error: contactError } = await supabase
+    .from("contacts")
+    .delete()
+    .eq("id", contactId);
+
+  if (contactError) throw contactError;
+}
+
 export function isWindowOpen(contact: Contact): boolean {
   if (!contact.window_expires_at) return false;
   return new Date(contact.window_expires_at) > new Date();
