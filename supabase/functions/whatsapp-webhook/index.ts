@@ -1,4 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { sendWebPush } from "../_shared/webpush.ts";
+
+const VAPID_PUBLIC = "BPxgX_S_hiylPT2HtQqtXmHLTrH-cdAS8hKSXVzN2MTuqRDbuvcLs3zI_xaus4B2GjWdvIMvBZ6On9wks5ORcVI";
+const VAPID_PRIVATE = "3qil8JqHkPgAQo1hr-xGN-Zw4TKGBBmF8ueck1Zvve4";
+const VAPID_SUBJECT = "mailto:admin@example.com";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -200,6 +205,40 @@ Deno.serve(async (req) => {
             status: "delivered",
             timestamp: new Date(parseInt(message.timestamp) * 1000).toISOString(),
           });
+
+          // Push notification to subscribed devices
+          try {
+            const { data: subs } = await supabase
+              .from("push_subscriptions")
+              .select("*")
+              .eq("user_id", account.user_id);
+            const title = contact!.name || from;
+            const preview =
+              messageType === "text" ? (content || "").slice(0, 120)
+                : messageType === "image" ? "📷 Photo"
+                : messageType === "video" ? "🎥 Video"
+                : messageType === "audio" ? "🎤 Voice message"
+                : messageType === "document" ? "📄 Document"
+                : "New message";
+            const payload = JSON.stringify({
+              title,
+              body: preview,
+              tag: `c-${contact!.id}`,
+              url: "/",
+            });
+            for (const s of subs || []) {
+              try {
+                const r = await sendWebPush(
+                  { endpoint: s.endpoint, p256dh: s.p256dh, auth: s.auth },
+                  payload,
+                  { publicKey: VAPID_PUBLIC, privateKey: VAPID_PRIVATE, subject: VAPID_SUBJECT }
+                );
+                if (!r.ok && (r.status === 404 || r.status === 410)) {
+                  await supabase.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
+                }
+              } catch (pushErr) { console.error("push err", pushErr); }
+            }
+          } catch (e) { console.error("push lookup err", e); }
 
           // Auto-reply: welcome (first incoming) / away / keyword
           await handleAutoReply(supabase, account, contact!, content, from, TOKEN, PHONE_ID);
