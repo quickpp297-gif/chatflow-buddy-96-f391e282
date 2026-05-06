@@ -28,6 +28,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 interface ChatAreaProps {
@@ -118,16 +119,16 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
     setSendingLabel(`Sending ${type}...`);
     setShowAttach(false);
     let localPreviewUrl: string | null = null;
+    const pendingMessage = createPendingMessage({
+      message_type: type,
+      content: "",
+      media_url: null,
+      media_mime_type: file.type,
+      media_filename: file.name,
+    });
     try {
       localPreviewUrl = URL.createObjectURL(file);
-      const pendingMessage = createPendingMessage({
-        message_type: type,
-        content: "",
-        media_url: localPreviewUrl,
-        media_mime_type: file.type,
-        media_filename: file.name,
-      });
-      onMessageSent(pendingMessage);
+      onMessageSent({ ...pendingMessage, media_url: localPreviewUrl });
       const url = await uploadAccountMedia(account.id, file, file.name, file.type);
       const response = await sendMediaMessage(
         account.id, contact.phone_number, type, url,
@@ -138,16 +139,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
       }
       toast.success("Sent!");
     } catch (e: any) {
-      onMessageSent({
-        ...createPendingMessage({
-          message_type: type,
-          content: "",
-          media_url: localPreviewUrl,
-          media_mime_type: file.type,
-          media_filename: file.name,
-        }),
-        status: "failed",
-      });
+      onMessageSent({ ...pendingMessage, media_url: localPreviewUrl, status: "failed" });
       toast.error("Failed: " + e.message);
     } finally {
       setSending(false);
@@ -254,12 +246,14 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <AlertDialog>
-            <button
-              type="button"
-              className="text-primary-foreground/80 hover:text-primary-foreground p-1.5 rounded-full hover:bg-primary-foreground/10"
-            >
-              <Trash2 size={18} />
-            </button>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                className="text-primary-foreground/80 hover:text-primary-foreground p-1.5 rounded-full hover:bg-primary-foreground/10"
+              >
+                <Trash2 size={18} />
+              </button>
+            </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete this chat?</AlertDialogTitle>
