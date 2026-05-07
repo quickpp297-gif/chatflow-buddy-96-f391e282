@@ -1,9 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { sendWebPush } from "../_shared/webpush.ts";
 
-const VAPID_PUBLIC = "BPxgX_S_hiylPT2HtQqtXmHLTrH-cdAS8hKSXVzN2MTuqRDbuvcLs3zI_xaus4B2GjWdvIMvBZ6On9wks5ORcVI";
-const VAPID_PRIVATE = "3qil8JqHkPgAQo1hr-xGN-Zw4TKGBBmF8ueck1Zvve4";
-const VAPID_SUBJECT = "mailto:admin@example.com";
+const VAPID_PUBLIC = "BKt76w8Wo4KN4AUHQtJkL2MCf2hIygIu6gPq-glR-QNn_m0e_RdJP_kh3J3avIxDFBWToFWudwHJDwBbhdZupYQ";
+const VAPID_PRIVATE = "Gc6dbnkVIQFh2xghVGt1NLCOzJOtK2mDkTXAY34cnDE";
+const VAPID_SUBJECT = "mailto:admin@finoxpro.app";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
