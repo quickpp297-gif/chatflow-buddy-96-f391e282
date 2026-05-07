@@ -33,6 +33,21 @@ export async function ensurePushSubscription(accountId: string, userId: string) 
   await navigator.serviceWorker.ready;
 
   let sub = await reg.pushManager.getSubscription();
+  if (sub) {
+    // If existing subscription was created with a different VAPID key, unsubscribe and resubscribe
+    const existingKey = sub.options?.applicationServerKey;
+    const expected = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+    let same = false;
+    if (existingKey) {
+      const a = new Uint8Array(existingKey as ArrayBuffer);
+      same = a.length === expected.length && a.every((v, i) => v === expected[i]);
+    }
+    if (!same) {
+      try { await sub.unsubscribe(); } catch (_) {}
+      try { await supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint); } catch (_) {}
+      sub = null;
+    }
+  }
   if (!sub) {
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
