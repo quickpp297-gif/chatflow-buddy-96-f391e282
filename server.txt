@@ -1,0 +1,314 @@
+============================================================
+ FinoXPro — Apne Server (cPanel) + Self-Hosted Supabase Guide
+============================================================
+
+Yeh complete step-by-step guide hai. Do hisse hain:
+  PART 1 -> Apna khud ka Supabase (VPS par, Docker se)
+  PART 2 -> Frontend ko cPanel par host karna
+  PART 3 -> WhatsApp + Push notifications connect
+  PART 4 -> Troubleshooting
+
+Note: cPanel shared hosting par SIRF frontend (static build) chalega.
+Supabase ke liye ek VPS chahiye (DigitalOcean / Hetzner / Contabo /
+AWS Lightsail — minimum 2 vCPU, 4GB RAM recommended).
+
+============================================================
+ PART 1 — SELF-HOSTED SUPABASE (apne VPS par)
+============================================================
+
+STEP 1: VPS taiyar karein
+---------------------------
+Ubuntu 22.04 LTS recommended. SSH se login karein, phir:
+
+  sudo apt update && sudo apt upgrade -y
+  sudo apt install -y git curl
+
+  # Docker install
+  curl -fsSL https://get.docker.com | sudo sh
+  sudo usermod -aG docker $USER
+  newgrp docker
+
+  # Docker compose plugin verify
+  docker compose version
+
+
+STEP 2: Supabase repo clone karein
+-----------------------------------
+  git clone --depth 1 https://github.com/supabase/supabase
+  cd supabase/docker
+  cp .env.example .env
+
+
+STEP 3: .env file edit karein (nano .env)
+------------------------------------------
+Yeh values change/set karein:
+
+  POSTGRES_PASSWORD=<strong-random-password>
+  JWT_SECRET=<min-32-char-random-string>
+  ANON_KEY=<JWT generate karein, niche dekho>
+  SERVICE_ROLE_KEY=<JWT generate karein, niche dekho>
+
+  SITE_URL=https://yourdomain.com
+  API_EXTERNAL_URL=https://api.yourdomain.com
+  SUPABASE_PUBLIC_URL=https://api.yourdomain.com
+
+  DASHBOARD_USERNAME=admin
+  DASHBOARD_PASSWORD=<strong-password>
+
+  # SMTP (email confirmation ke liye — Gmail/SendGrid/etc.)
+  SMTP_ADMIN_EMAIL=you@yourdomain.com
+  SMTP_HOST=smtp.gmail.com
+  SMTP_PORT=587
+  SMTP_USER=you@gmail.com
+  SMTP_PASS=<app-password>
+  SMTP_SENDER_NAME=FinoXPro
+
+ANON_KEY aur SERVICE_ROLE_KEY generate karne ke liye:
+  https://supabase.com/docs/guides/self-hosting/docker#api-keys
+  (JWT_SECRET ke saath HS256 sign karke 2 tokens banayein —
+   anon role aur service_role role ke liye)
+
+
+STEP 4: Domain + Reverse Proxy (Nginx + SSL)
+---------------------------------------------
+Apne domain registrar me 2 A records banayein, dono apne VPS IP par:
+
+  api.yourdomain.com      ->  <VPS_IP>
+  studio.yourdomain.com   ->  <VPS_IP>
+
+Nginx + Certbot install:
+
+  sudo apt install -y nginx certbot python3-certbot-nginx
+
+/etc/nginx/sites-available/supabase file banayein:
+
+  server {
+    server_name api.yourdomain.com;
+    client_max_body_size 50M;
+    location / {
+      proxy_pass http://localhost:8000;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+    }
+  }
+
+  server {
+    server_name studio.yourdomain.com;
+    location / {
+      proxy_pass http://localhost:3000;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+    }
+  }
+
+Enable + SSL:
+  sudo ln -s /etc/nginx/sites-available/supabase /etc/nginx/sites-enabled/
+  sudo nginx -t && sudo systemctl reload nginx
+  sudo certbot --nginx -d api.yourdomain.com -d studio.yourdomain.com
+
+
+STEP 5: Supabase start karein
+------------------------------
+  cd ~/supabase/docker
+  docker compose pull
+  docker compose up -d
+  docker compose ps   # sab "running" hone chahiye
+
+
+STEP 6: Database migrations apply karein
+-----------------------------------------
+  https://studio.yourdomain.com  kholein -> login (admin / password).
+  Left sidebar -> SQL Editor -> New Query.
+
+  Is project ke `supabase/migrations/` folder ki SAARI .sql files
+  CHRONOLOGICAL order me (filename ke timestamp se sort karke) ek-ek
+  karke paste karke RUN karein:
+
+    20260411053833_*.sql
+    20260411053957_*.sql
+    20260506022201_*.sql
+    20260506030705_*.sql
+    20260506033451_*.sql
+
+  (Naye migrations future me add ho sakte hain — vahi order follow karein.)
+
+
+STEP 7: Storage bucket banayein
+--------------------------------
+  Studio -> Storage -> New bucket
+    Name: whatsapp-media
+    Public: ON  (toggle enable)
+
+
+STEP 8: Auth settings
+----------------------
+  Studio -> Authentication -> URL Configuration:
+    Site URL: https://yourdomain.com
+    Redirect URLs: https://yourdomain.com/*
+
+  Authentication -> Providers -> Email:
+    Enable email signups: ON
+    Confirm email: ON (recommended)
+
+
+STEP 9: Realtime enable karein (chat live updates ke liye)
+-----------------------------------------------------------
+  Studio -> Database -> Replication -> supabase_realtime publication:
+    `messages` aur `contacts` tables enable karein.
+
+
+STEP 10: Edge Functions deploy karein
+--------------------------------------
+Apne LOCAL machine par (VPS par nahi):
+
+  npm install -g supabase
+  supabase login
+
+  # Self-hosted ke liye direct deploy:
+  export SUPABASE_ACCESS_TOKEN=<your-token>
+  cd <is-project-ka-folder>
+
+  # Functions deploy:
+  supabase functions deploy whatsapp-webhook \
+    --project-ref <ref> --no-verify-jwt
+  supabase functions deploy whatsapp-send --project-ref <ref>
+  supabase functions deploy admin-delete-user --project-ref <ref>
+
+Ya manual: studio me Edge Functions tab se code paste karke deploy karein.
+
+Kuch alag se secret set karne ki zaroorat NAHI hai — WhatsApp creds DB
+ke `wa_accounts` table me store hote hain (per-user), aur VAPID push
+keys code me hardcoded hain.
+
+
+============================================================
+ PART 2 — FRONTEND cPanel PAR HOST KARNA
+============================================================
+
+STEP 1: Code download karein
+-----------------------------
+Lovable editor me top-right "GitHub" button -> "Connect to GitHub" ->
+repo bana lein. Phir local me clone:
+
+  git clone https://github.com/<you>/<repo>.git
+  cd <repo>
+  npm install
+
+
+STEP 2: .env file update karein
+--------------------------------
+Project root me `.env` kholein aur self-hosted Supabase ke values dalein:
+
+  VITE_SUPABASE_URL=https://api.yourdomain.com
+  VITE_SUPABASE_PUBLISHABLE_KEY=<aapka self-hosted ANON_KEY>
+  VITE_SUPABASE_PROJECT_ID=finoxpro
+
+
+STEP 3: Production build banayein
+----------------------------------
+  npm run build
+
+`dist/` folder generate hoga — yahi cPanel par upload karna hai.
+
+
+STEP 4: cPanel par upload karein
+---------------------------------
+1. cPanel login -> File Manager -> public_html (ya jis subdomain ka
+   document root ho).
+2. Purani files delete karein (agar test files hain).
+3. `dist/` ke ANDAR ki saari files+folders upload karein
+   (NA ki dist folder khud — uske andar ka content).
+4. `index.html`, `assets/`, `sw.js`, `placeholder.svg`, `robots.txt`
+   sab public_html me directly hone chahiye.
+
+
+STEP 5: SPA routing ke liye .htaccess banayein
+-----------------------------------------------
+public_html me `.htaccess` file banayein:
+
+  <IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+    RewriteRule ^index\.html$ - [L]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule . /index.html [L]
+  </IfModule>
+
+  # Service worker correct MIME
+  <Files "sw.js">
+    Header set Service-Worker-Allowed "/"
+    Header set Cache-Control "no-cache"
+  </Files>
+
+
+STEP 6: HTTPS enable karein
+----------------------------
+cPanel -> SSL/TLS Status -> AutoSSL run karein.
+Push notifications + WhatsApp webhook ke liye HTTPS ZAROORI hai.
+
+
+============================================================
+ PART 3 — WhatsApp + Push Connect
+============================================================
+
+WhatsApp Cloud API:
+  1. App khol kar sign up karein.
+  2. Settings -> Account: Phone Number ID + Permanent Token paste.
+  3. Settings -> Webhook tab: Callback URL + Verify Token copy karein.
+     (Callback URL hoga: https://api.yourdomain.com/functions/v1/whatsapp-webhook)
+  4. Meta Developer Console -> WhatsApp -> Configuration:
+     - Callback URL paste
+     - Verify Token paste
+     - "messages" field subscribe
+  5. Test message bhejein.
+
+Push Notifications:
+  - Pehli baar app khulne par browser permission popup -> Allow.
+  - VAPID keys hardcoded hain — kuch karne ki zaroorat nahi.
+  - HTTPS ZAROORI hai, varna service worker register nahi hoga.
+
+
+============================================================
+ PART 4 — TROUBLESHOOTING
+============================================================
+
+- "Failed to fetch" / login nahi ho raha
+  -> .env me VITE_SUPABASE_URL galat hai, ya CORS issue.
+     Studio -> API Settings me apna frontend domain whitelist karein.
+
+- Webhook verify fail
+  -> Verify Token EXACTLY match hona chahiye. Webhook URL me typo check.
+
+- Voice message nahi ja raha
+  -> Browser console dekho. Firefox = ogg native, Chrome = webm-opus.
+     Meta dono accept karta hai jab MIME `audio/ogg` ho.
+
+- New message dikhne me delay / refresh karna pad raha
+  -> Realtime publication me `messages` + `contacts` enabled hai check.
+     (PART 1, STEP 9)
+
+- Push nahi aa rahi
+  -> HTTPS on hai? sw.js public_html me hai? Browser settings me
+     notification permission "Allow" hai?
+
+- Migrations apply karte time error
+  -> Order check karein (filename timestamp ascending). Pehli migration
+     types/enums create karti hai, baad waali unko use karti hain.
+
+- Edge function 401 / 500
+  -> docker compose logs functions   (VPS par run karein)
+
+- File upload fail
+  -> Storage bucket `whatsapp-media` PUBLIC hai? (PART 1, STEP 7)
+
+
+============================================================
+ Ho gaya! Ab FinoXPro pura aapke apne server par chal raha hai 🎉
+ Brand: FinoXPro
+============================================================
