@@ -296,13 +296,7 @@ const Index = () => {
             }}
           />
         ) : (
-          <div className="flex-1 flex items-center justify-center wa-chat-bg">
-            <div className="text-center text-muted-foreground p-6">
-              <div className="text-7xl mb-4">💬</div>
-              <h2 className="text-xl font-medium mb-1">{account.business_name}</h2>
-              <p className="text-sm">Select a contact to start chatting</p>
-            </div>
-          </div>
+          <div className="flex-1 wa-chat-bg" />
         )}
       </div>
     </div>
