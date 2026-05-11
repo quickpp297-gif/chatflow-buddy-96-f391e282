@@ -214,7 +214,7 @@ const Index = () => {
 
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-secondary">
-      <div className={`${showContactList ? "flex" : "hidden"} md:flex flex-col w-full md:w-[380px] lg:w-[420px] md:min-w-[320px] border-r border-border bg-card`}>
+      <div className={`${showContactList ? "flex" : "hidden"} md:flex flex-col w-full ${selectedContact ? "md:w-[380px] lg:w-[420px] md:min-w-[320px] md:flex-none" : "md:flex-1"} border-r border-border bg-card`}>
         <div className="flex items-center justify-between px-3 py-2.5 bg-[hsl(var(--wa-header))] gap-2">
           <div className="relative flex-1 min-w-0">
             <button onClick={() => setShowMenu(!showMenu)}
@@ -263,8 +263,8 @@ const Index = () => {
         />
       </div>
 
-      <div className={`${!showContactList ? "flex" : "hidden"} md:flex flex-col flex-1 min-w-0`}>
-        {selectedContact ? (
+      <div className={`${!showContactList ? "flex" : "hidden"} ${selectedContact ? "md:flex" : "md:hidden"} flex-col flex-1 min-w-0`}>
+        {selectedContact && (
           <ChatArea
             contact={selectedContact}
             messages={messages}
@@ -295,8 +295,6 @@ const Index = () => {
               }));
             }}
           />
-        ) : (
-          <div className="flex-1 wa-chat-bg" />
         )}
       </div>
     </div>
