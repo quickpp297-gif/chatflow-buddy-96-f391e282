@@ -19,6 +19,7 @@ import { MessageBubble } from "./MessageBubble";
 import { TemplateDialog } from "./TemplateDialog";
 import { VoiceRecorder, VoiceRecorderHandle } from "./VoiceRecorder";
 import { useAccount } from "@/hooks/useAccount";
+import { compressImage } from "@/lib/imageCompress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -119,7 +120,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
     setSendingLabel(`Sending ${type}...`);
     setShowAttach(false);
     let localPreviewUrl: string | null = null;
-    const pendingMessage = createPendingMessage({
+    let pendingMessage = createPendingMessage({
       message_type: type,
       content: "",
       media_url: null,
@@ -127,12 +128,18 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
       media_filename: file.name,
     });
     try {
-      localPreviewUrl = URL.createObjectURL(file);
+      // Compress images first to avoid WebView memory crashes (white screen) on large camera photos
+      let uploadFile: File = file;
+      if (type === "image") {
+        uploadFile = await compressImage(file);
+        pendingMessage = { ...pendingMessage, media_mime_type: uploadFile.type, media_filename: uploadFile.name };
+      }
+      localPreviewUrl = URL.createObjectURL(uploadFile);
       onMessageSent({ ...pendingMessage, media_url: localPreviewUrl });
-      const url = await uploadAccountMedia(account.id, file, file.name, file.type);
+      const url = await uploadAccountMedia(account.id, uploadFile, uploadFile.name, uploadFile.type);
       const response = await sendMediaMessage(
         account.id, contact.phone_number, type, url,
-        "", contact.id, file.type, file.name
+        "", contact.id, uploadFile.type, uploadFile.name
       );
       if ((response as any)?.inserted_message) {
         onMessageSent((response as any).inserted_message);
