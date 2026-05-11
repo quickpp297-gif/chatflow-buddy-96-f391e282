@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Message } from "@/lib/whatsapp";
-import { Check, CheckCheck, Clock, Download, LoaderCircle, Pause, Play } from "lucide-react";
+import { Check, CheckCheck, Clock, Download, Loader2, LoaderCircle, Pause, Play } from "lucide-react";
 import { format } from "date-fns";
 
 interface MessageBubbleProps {
@@ -42,26 +42,40 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     if (!message.media_url) return null;
 
     const mimeType = message.media_mime_type || "";
+    const isPending = message.status === "pending";
+    const pendingOverlay = isPending ? (
+      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
+        <div className="flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-white text-xs">
+          <Loader2 size={14} className="animate-spin" /> Sending...
+        </div>
+      </div>
+    ) : null;
 
     if (message.message_type === "image" || mimeType.startsWith("image/")) {
       return (
-        <img
-          src={message.media_url}
-          alt="Image"
-          className="rounded-lg max-w-full max-h-[300px] object-contain mb-1"
-          loading="lazy"
-        />
+        <div className="relative mb-1 inline-block">
+          <img
+            src={message.media_url}
+            alt="Image"
+            className={`rounded-lg max-w-full max-h-[300px] object-contain ${isPending ? "opacity-80" : ""}`}
+            loading="lazy"
+          />
+          {pendingOverlay}
+        </div>
       );
     }
 
     if (message.message_type === "video" || mimeType.startsWith("video/")) {
       return (
-        <video
-          src={message.media_url}
-          controls
-          className="rounded-lg max-w-full max-h-[300px] mb-1"
-          preload="metadata"
-        />
+        <div className="relative mb-1 inline-block">
+          <video
+            src={message.media_url}
+            controls={!isPending}
+            className={`rounded-lg max-w-full max-h-[300px] ${isPending ? "opacity-80" : ""}`}
+            preload="metadata"
+          />
+          {pendingOverlay}
+        </div>
       );
     }
 
