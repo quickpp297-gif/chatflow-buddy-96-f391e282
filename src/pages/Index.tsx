@@ -86,6 +86,25 @@ const Index = () => {
 
   useEffect(() => { selectedContactRef.current = selectedContact; }, [selectedContact]);
 
+  // Android/mobile hardware back button: when a contact is open, push a history entry
+  // so that pressing back closes the chat instead of leaving the app.
+  useEffect(() => {
+    if (!selectedContact) return;
+    if (typeof window === "undefined") return;
+    const isNarrow = window.matchMedia("(max-width: 767px)").matches;
+    if (!isNarrow) return;
+
+    window.history.pushState({ chatOpen: true }, "");
+    const onPop = () => {
+      setShowContactList(true);
+      setSelectedContact(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+    };
+  }, [selectedContact]);
+
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
   }, [user, authLoading, navigate]);
