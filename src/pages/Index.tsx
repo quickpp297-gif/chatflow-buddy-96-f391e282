@@ -268,7 +268,15 @@ const Index = () => {
           <ChatArea
             contact={selectedContact}
             messages={messages}
-            onBack={() => { setShowContactList(true); setSelectedContact(null); }}
+            onBack={() => {
+              const isNarrow = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+              if (isNarrow && window.history.state && (window.history.state as any).chatOpen) {
+                window.history.back();
+              } else {
+                setShowContactList(true);
+                setSelectedContact(null);
+              }
+            }}
             onContactDeleted={(contactId) => {
               setContacts((prev) => prev.filter((item) => item.id !== contactId));
               setMessages([]);
