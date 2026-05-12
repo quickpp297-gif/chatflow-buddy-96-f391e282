@@ -33,6 +33,32 @@ const Index = () => {
 
   const getSavedContactKey = useCallback((accountId: string) => `wa_selected_contact_${accountId}`, []);
 
+  // localStorage survives Chrome process kill (e.g. when Android frees memory while
+  // file picker / Google Photos is in foreground). sessionStorage does NOT.
+  const persistSelectedContact = useCallback((accountId: string, contact: Contact | null) => {
+    const key = getSavedContactKey(accountId);
+    try {
+      if (contact) {
+        localStorage.setItem(key, JSON.stringify({ id: contact.id, contact }));
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch (_) {}
+  }, [getSavedContactKey]);
+
+  const readSavedContact = useCallback((accountId: string): { id: string; contact?: Contact } | null => {
+    const key = getSavedContactKey(accountId);
+    try {
+      const raw = localStorage.getItem(key) || sessionStorage.getItem(key);
+      if (!raw) return null;
+      // Backward compat: older versions stored just the id string
+      if (raw.startsWith("{")) return JSON.parse(raw);
+      return { id: raw };
+    } catch {
+      return null;
+    }
+  }, [getSavedContactKey]);
+
   const upsertContact = useCallback((incoming: Contact) => {
     setContacts((prev) => {
       const next = prev.filter((c) => c.id !== incoming.id);
@@ -180,8 +206,20 @@ const Index = () => {
 
   useEffect(() => {
     if (!account) return;
-    setSelectedContact(null);
-    setMessages([]);
+    // Restore previously open chat IMMEDIATELY (before contacts load) so that
+    // when Chrome kills/restores the WebView after a file picker, user lands
+    // back inside the same chat instead of the empty placeholder.
+    const saved = readSavedContact(account.id);
+    if (saved?.contact) {
+      setSelectedContact(saved.contact);
+      setShowContactList(false);
+      restoredContactRef.current = `${account.id}:${saved.contact.id}`;
+      loadMessages(saved.contact.id).catch(() => {});
+      markContactRead(saved.contact.id).catch(() => {});
+    } else {
+      setSelectedContact(null);
+      setMessages([]);
+    }
     setLoading(true);
     loadContacts();
 
@@ -212,7 +250,7 @@ const Index = () => {
       }
     });
     return () => { msgSub.unsubscribe(); contactSub.unsubscribe(); };
-  }, [account, loadContacts, mergeRealtimeMessage, upsertContact]);
+  }, [account, loadContacts, loadMessages, mergeRealtimeMessage, upsertContact, readSavedContact]);
 
   const handleSelectContact = useCallback(async (c: Contact) => {
     setSelectedContact(c);
@@ -224,27 +262,19 @@ const Index = () => {
 
   useEffect(() => {
     if (!account) return;
-
-    const key = getSavedContactKey(account.id);
-    if (selectedContact) {
-      sessionStorage.setItem(key, selectedContact.id);
-      return;
-    }
-
-    sessionStorage.removeItem(key);
-  }, [account, selectedContact, getSavedContactKey]);
+    persistSelectedContact(account.id, selectedContact);
+  }, [account, selectedContact, persistSelectedContact]);
 
   useEffect(() => {
     if (!account || loading || selectedContact || contacts.length === 0) return;
 
-    const key = getSavedContactKey(account.id);
-    const savedContactId = sessionStorage.getItem(key);
-    if (!savedContactId) return;
+    const saved = readSavedContact(account.id);
+    if (!saved) return;
 
-    const restoreKey = `${account.id}:${savedContactId}`;
+    const restoreKey = `${account.id}:${saved.id}`;
     if (restoredContactRef.current === restoreKey) return;
 
-    const savedContact = contacts.find((contact) => contact.id === savedContactId);
+    const savedContact = contacts.find((contact) => contact.id === saved.id);
     if (!savedContact) return;
 
     restoredContactRef.current = restoreKey;
@@ -252,7 +282,7 @@ const Index = () => {
       console.error(error);
       restoredContactRef.current = null;
     });
-  }, [account, contacts, loading, selectedContact, handleSelectContact, getSavedContactKey]);
+  }, [account, contacts, loading, selectedContact, handleSelectContact, readSavedContact]);
 
   // Keep selectedContact in sync with latest contacts (for window/unread updates)
   useEffect(() => {
