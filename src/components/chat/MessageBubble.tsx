@@ -20,6 +20,15 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const mediaUrl = message.media_url;
+    return () => {
+      if (mediaUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(mediaUrl);
+      }
+    };
+  }, [message.media_url]);
+
   const statusIcon = () => {
     if (!isOutgoing) return null;
     switch (message.status) {
