@@ -25,6 +25,9 @@ const Index = () => {
   const [showContactList, setShowContactList] = useState(true);
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
+  const [pushPerm, setPushPerm] = useState<NotificationPermission | "unsupported">(
+    typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported"
+  );
   const selectedContactRef = useRef<Contact | null>(null);
   const restoredContactRef = useRef<string | null>(null);
 
@@ -116,21 +119,29 @@ const Index = () => {
     restoredContactRef.current = null;
   }, [account?.id]);
 
-  // Auto-prompt push notifications once per session per account
+  // Ensure push subscription is registered when permission is already granted
   useEffect(() => {
     if (!user || !account || !pushSupported()) return;
-    const key = `wa_push_prompted_${account.id}`;
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, "1");
-    if (Notification.permission === "default") {
-      // Fire on next tick so UI is ready
-      setTimeout(() => {
-        ensurePushSubscription(account.id, user.id).then((sub) => {
-          if (sub) toast.success("Notifications enabled");
-        }).catch(() => {});
-      }, 800);
-    } else if (Notification.permission === "granted") {
+    if (Notification.permission === "granted") {
       ensurePushSubscription(account.id, user.id).catch(() => {});
+    }
+  }, [user, account]);
+
+  const enablePushClick = useCallback(async () => {
+    if (!user || !account) return;
+    if (!pushSupported()) {
+      toast.error("Notifications not supported on this browser");
+      return;
+    }
+    try {
+      const sub = await ensurePushSubscription(account.id, user.id);
+      setPushPerm(Notification.permission);
+      if (sub) toast.success("Notifications enabled");
+      else if (Notification.permission === "denied") {
+        toast.error("Notifications blocked. Enable them in browser settings.");
+      }
+    } catch (e) {
+      console.error(e);
     }
   }, [user, account]);
 
@@ -313,6 +324,17 @@ const Index = () => {
           <div className="bg-accent text-accent-foreground text-xs px-3 py-2 border-b border-border">
             ⚠️ Add WhatsApp token & phone ID in <button className="underline font-medium" onClick={() => setShowSettings(true)}>Settings</button> to enable messaging.
           </div>
+        )}
+
+        {pushPerm !== "granted" && pushPerm !== "unsupported" && (
+          <button
+            onClick={enablePushClick}
+            className="w-full bg-primary/10 text-primary text-xs px-3 py-2 border-b border-border text-left hover:bg-primary/15 transition-colors"
+          >
+            🔔 {pushPerm === "denied"
+              ? "Notifications blocked — tap to learn how to enable"
+              : "Enable notifications for new messages"}
+          </button>
         )}
 
         <ContactList
