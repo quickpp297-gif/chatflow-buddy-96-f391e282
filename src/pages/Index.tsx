@@ -26,6 +26,9 @@ const Index = () => {
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
   const selectedContactRef = useRef<Contact | null>(null);
+  const restoredContactRef = useRef<string | null>(null);
+
+  const getSavedContactKey = useCallback((accountId: string) => `wa_selected_contact_${accountId}`, []);
 
   const upsertContact = useCallback((incoming: Contact) => {
     setContacts((prev) => {
@@ -109,6 +112,10 @@ const Index = () => {
     if (!authLoading && !user) navigate("/auth");
   }, [user, authLoading, navigate]);
 
+  useEffect(() => {
+    restoredContactRef.current = null;
+  }, [account?.id]);
+
   // Auto-prompt push notifications once per session per account
   useEffect(() => {
     if (!user || !account || !pushSupported()) return;
@@ -125,6 +132,27 @@ const Index = () => {
     } else if (Notification.permission === "granted") {
       ensurePushSubscription(account.id, user.id).catch(() => {});
     }
+  }, [user, account]);
+
+  useEffect(() => {
+    if (!user || !account || !pushSupported()) return;
+
+    const refreshPushSubscription = () => {
+      if (document.visibilityState !== "visible") return;
+      if (Notification.permission === "granted") {
+        ensurePushSubscription(account.id, user.id).catch(() => {});
+      }
+    };
+
+    window.addEventListener("focus", refreshPushSubscription);
+    window.addEventListener("pageshow", refreshPushSubscription);
+    document.addEventListener("visibilitychange", refreshPushSubscription);
+
+    return () => {
+      window.removeEventListener("focus", refreshPushSubscription);
+      window.removeEventListener("pageshow", refreshPushSubscription);
+      document.removeEventListener("visibilitychange", refreshPushSubscription);
+    };
   }, [user, account]);
 
   const loadContacts = useCallback(async () => {
@@ -175,13 +203,45 @@ const Index = () => {
     return () => { msgSub.unsubscribe(); contactSub.unsubscribe(); };
   }, [account, loadContacts, mergeRealtimeMessage, upsertContact]);
 
-  const handleSelectContact = async (c: Contact) => {
+  const handleSelectContact = useCallback(async (c: Contact) => {
     setSelectedContact(c);
     setShowContactList(false);
     await loadMessages(c.id);
     await markContactRead(c.id);
     setContacts((prev) => prev.map((item) => item.id === c.id ? { ...item, unread_count: 0 } : item));
-  };
+  }, [loadMessages]);
+
+  useEffect(() => {
+    if (!account) return;
+
+    const key = getSavedContactKey(account.id);
+    if (selectedContact) {
+      sessionStorage.setItem(key, selectedContact.id);
+      return;
+    }
+
+    sessionStorage.removeItem(key);
+  }, [account, selectedContact, getSavedContactKey]);
+
+  useEffect(() => {
+    if (!account || loading || selectedContact || contacts.length === 0) return;
+
+    const key = getSavedContactKey(account.id);
+    const savedContactId = sessionStorage.getItem(key);
+    if (!savedContactId) return;
+
+    const restoreKey = `${account.id}:${savedContactId}`;
+    if (restoredContactRef.current === restoreKey) return;
+
+    const savedContact = contacts.find((contact) => contact.id === savedContactId);
+    if (!savedContact) return;
+
+    restoredContactRef.current = restoreKey;
+    handleSelectContact(savedContact).catch((error) => {
+      console.error(error);
+      restoredContactRef.current = null;
+    });
+  }, [account, contacts, loading, selectedContact, handleSelectContact, getSavedContactKey]);
 
   // Keep selectedContact in sync with latest contacts (for window/unread updates)
   useEffect(() => {
@@ -268,6 +328,10 @@ const Index = () => {
           <ChatArea
             contact={selectedContact}
             messages={messages}
+            onResumeSync={async () => {
+              await loadContacts();
+              await loadMessages(selectedContact.id);
+            }}
             onBack={() => {
               const isNarrow = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
               if (isNarrow && window.history.state && (window.history.state as any).chatOpen) {

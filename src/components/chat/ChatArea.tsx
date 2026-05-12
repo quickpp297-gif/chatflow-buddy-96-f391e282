@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { flushSync } from "react-dom";
 import {
   Contact,
@@ -36,11 +36,12 @@ interface ChatAreaProps {
   contact: Contact;
   messages: Message[];
   onBack: () => void;
+  onResumeSync?: () => Promise<void> | void;
   onMessageSent: (pendingMessage: Message) => void;
   onContactDeleted: (contactId: string) => void;
 }
 
-export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDeleted }: ChatAreaProps) {
+export function ChatArea({ contact, messages, onBack, onResumeSync, onMessageSent, onContactDeleted }: ChatAreaProps) {
   const { current: account } = useAccount();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -54,6 +55,7 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
   const videoInputRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<VoiceRecorderHandle | null>(null);
   const textValueRef = useRef("");
+  const resumeSyncingRef = useRef(false);
 
   const windowOpen = isWindowOpen(contact);
 
@@ -64,6 +66,35 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
   useEffect(() => {
     textValueRef.current = text;
   }, [text]);
+
+  const syncOnResume = useCallback(async () => {
+    if (!onResumeSync || resumeSyncingRef.current) return;
+    resumeSyncingRef.current = true;
+    try {
+      await onResumeSync();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      resumeSyncingRef.current = false;
+    }
+  }, [onResumeSync]);
+
+  useEffect(() => {
+    const handleVisibilityRestore = () => {
+      if (document.visibilityState !== "visible") return;
+      syncOnResume();
+    };
+
+    window.addEventListener("focus", handleVisibilityRestore);
+    window.addEventListener("pageshow", handleVisibilityRestore);
+    document.addEventListener("visibilitychange", handleVisibilityRestore);
+
+    return () => {
+      window.removeEventListener("focus", handleVisibilityRestore);
+      window.removeEventListener("pageshow", handleVisibilityRestore);
+      document.removeEventListener("visibilitychange", handleVisibilityRestore);
+    };
+  }, [syncOnResume]);
 
   const canInteract = windowOpen && !sending;
 
@@ -134,7 +165,9 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
         uploadFile = await compressImage(file);
         pendingMessage = { ...pendingMessage, media_mime_type: uploadFile.type, media_filename: uploadFile.name };
       }
-      localPreviewUrl = URL.createObjectURL(uploadFile);
+      localPreviewUrl = type === "image"
+        ? await fileToDataUrl(uploadFile)
+        : URL.createObjectURL(uploadFile);
       onMessageSent({ ...pendingMessage, media_url: localPreviewUrl });
       const url = await uploadAccountMedia(account.id, uploadFile, uploadFile.name, uploadFile.type);
       const response = await sendMediaMessage(
@@ -410,4 +443,13 @@ export function ChatArea({ contact, messages, onBack, onMessageSent, onContactDe
       )}
     </div>
   );
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(reader.error || new Error("Preview generate failed"));
+    reader.readAsDataURL(file);
+  });
 }
