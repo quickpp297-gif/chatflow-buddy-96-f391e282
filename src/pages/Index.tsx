@@ -183,6 +183,7 @@ const Index = () => {
 
     const refreshPushSubscription = () => {
       if (document.visibilityState !== "visible") return;
+      setPushPerm(Notification.permission);
       if (Notification.permission === "granted") {
         ensurePushSubscription(account.id, user.id).catch(() => {});
       }
