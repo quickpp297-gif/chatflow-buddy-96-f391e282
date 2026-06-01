@@ -24,12 +24,42 @@ export function pushSupported() {
   return typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
 }
 
+async function registerServiceWorker() {
+  const existing = await navigator.serviceWorker.getRegistration("/");
+  if (existing) {
+    await existing.update().catch(() => {});
+    return existing;
+  }
+
+  const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  await navigator.serviceWorker.ready;
+  return reg;
+}
+
+async function saveSubscription(accountId: string, userId: string, sub: PushSubscription) {
+  const json: any = sub.toJSON();
+  const payload = {
+    account_id: accountId,
+    user_id: userId,
+    endpoint: sub.endpoint,
+    p256dh: json.keys?.p256dh || bufToB64(sub.getKey("p256dh")),
+    auth: json.keys?.auth || bufToB64(sub.getKey("auth")),
+    user_agent: navigator.userAgent,
+  };
+
+  const { error } = await supabase.functions.invoke("whatsapp-send", {
+    body: { action: "register_push", account_id: accountId, subscription: payload },
+  });
+
+  if (error) throw error;
+}
+
 export async function ensurePushSubscription(accountId: string, userId: string) {
   if (!pushSupported()) return null;
   const perm = await Notification.requestPermission();
   if (perm !== "granted") return null;
 
-  const reg = await navigator.serviceWorker.register("/sw.js");
+  const reg = await registerServiceWorker();
   await navigator.serviceWorker.ready;
 
   let sub = await reg.pushManager.getSubscription();
@@ -55,18 +85,7 @@ export async function ensurePushSubscription(accountId: string, userId: string) 
     });
   }
 
-  const json: any = sub.toJSON();
-  await supabase.from("push_subscriptions").upsert(
-    {
-      user_id: userId,
-      account_id: accountId,
-      endpoint: sub.endpoint,
-      p256dh: json.keys?.p256dh || bufToB64(sub.getKey("p256dh")),
-      auth: json.keys?.auth || bufToB64(sub.getKey("auth")),
-      user_agent: navigator.userAgent,
-    },
-    { onConflict: "endpoint" }
-  );
+  await saveSubscription(accountId, userId, sub);
 
   return sub;
 }
