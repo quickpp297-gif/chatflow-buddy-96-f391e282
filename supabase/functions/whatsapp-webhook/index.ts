@@ -224,7 +224,7 @@ Deno.serve(async (req) => {
               title,
               body: preview,
               tag: `c-${contact!.id}`,
-              url: "/",
+              url: `/?contact=${contact!.id}`,
             });
             for (const s of subs || []) {
               try {
