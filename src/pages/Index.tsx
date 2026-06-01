@@ -31,6 +31,9 @@ const Index = () => {
   const selectedContactRef = useRef<Contact | null>(null);
   const restoredContactRef = useRef<string | null>(null);
 
+  const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const contactFromUrl = searchParams?.get("contact") || null;
+
   const getSavedContactKey = useCallback((accountId: string) => `wa_selected_contact_${accountId}`, []);
 
   // localStorage survives Chrome process kill (e.g. when Android frees memory while
@@ -145,6 +148,10 @@ const Index = () => {
     restoredContactRef.current = null;
   }, [account?.id]);
 
+  useEffect(() => {
+    setPushPerm(typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported");
+  }, []);
+
   // Ensure push subscription is registered when permission is already granted
   useEffect(() => {
     if (!user || !account || !pushSupported()) return;
@@ -176,6 +183,7 @@ const Index = () => {
 
     const refreshPushSubscription = () => {
       if (document.visibilityState !== "visible") return;
+      setPushPerm(Notification.permission);
       if (Notification.permission === "granted") {
         ensurePushSubscription(account.id, user.id).catch(() => {});
       }
@@ -209,7 +217,7 @@ const Index = () => {
     // Restore previously open chat IMMEDIATELY (before contacts load) so that
     // when Chrome kills/restores the WebView after a file picker, user lands
     // back inside the same chat instead of the empty placeholder.
-    const saved = readSavedContact(account.id);
+    const saved = contactFromUrl ? { id: contactFromUrl } : readSavedContact(account.id);
     if (saved?.contact) {
       setSelectedContact(saved.contact);
       setShowContactList(false);
@@ -250,7 +258,7 @@ const Index = () => {
       }
     });
     return () => { msgSub.unsubscribe(); contactSub.unsubscribe(); };
-  }, [account, loadContacts, loadMessages, mergeRealtimeMessage, upsertContact, readSavedContact]);
+  }, [account, loadContacts, loadMessages, mergeRealtimeMessage, upsertContact, readSavedContact, contactFromUrl]);
 
   const handleSelectContact = useCallback(async (c: Contact) => {
     setSelectedContact(c);
@@ -268,7 +276,7 @@ const Index = () => {
   useEffect(() => {
     if (!account || loading || selectedContact || contacts.length === 0) return;
 
-    const saved = readSavedContact(account.id);
+    const saved = contactFromUrl ? { id: contactFromUrl } : readSavedContact(account.id);
     if (!saved) return;
 
     const restoreKey = `${account.id}:${saved.id}`;
@@ -282,7 +290,7 @@ const Index = () => {
       console.error(error);
       restoredContactRef.current = null;
     });
-  }, [account, contacts, loading, selectedContact, handleSelectContact, readSavedContact]);
+  }, [account, contacts, loading, selectedContact, handleSelectContact, readSavedContact, contactFromUrl]);
 
   // Keep selectedContact in sync with latest contacts (for window/unread updates)
   useEffect(() => {

@@ -23,7 +23,12 @@ self.addEventListener('notificationclick', (event) => {
   const url = (event.notification.data && event.notification.data.url) || '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      for (const c of list) { if ('focus' in c) return c.focus(); }
+      for (const c of list) {
+        if ('navigate' in c) {
+          return c.navigate(url).then(() => c.focus());
+        }
+        if ('focus' in c) return c.focus();
+      }
       if (self.clients.openWindow) return self.clients.openWindow(url);
     })
   );

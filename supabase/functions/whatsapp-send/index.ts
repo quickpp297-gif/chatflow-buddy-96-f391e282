@@ -69,6 +69,34 @@ Deno.serve(async (req) => {
       "Content-Type": "application/json",
     };
 
+    if (action === "register_push") {
+      const subscription = body.subscription;
+      if (!subscription?.endpoint || !subscription?.p256dh || !subscription?.auth) {
+        return fail("Push subscription is incomplete");
+      }
+
+      const { error: upsertError } = await supabase
+        .from("push_subscriptions")
+        .upsert(
+          {
+            user_id: user.id,
+            account_id,
+            endpoint: subscription.endpoint,
+            p256dh: subscription.p256dh,
+            auth: subscription.auth,
+            user_agent: subscription.user_agent || req.headers.get("user-agent") || "unknown",
+          },
+          { onConflict: "endpoint" },
+        );
+
+      if (upsertError) {
+        console.error("push register failed", upsertError);
+        return fail("Push registration failed", upsertError, 500);
+      }
+
+      return ok({ success: true });
+    }
+
     if (action === "send_text") {
       const { to, message, contact_id } = body;
       const r = await fetch(baseUrl, {
