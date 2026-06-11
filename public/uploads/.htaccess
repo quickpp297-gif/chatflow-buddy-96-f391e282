@@ -1,0 +1,14 @@
+# Allow public read access to uploaded media (WhatsApp Cloud API needs
+# to fetch these URLs to send the media). Block PHP/script execution
+# inside this folder for safety.
+
+Options -Indexes
+
+<FilesMatch "\.(php|phtml|phar|cgi|pl|py|sh)$">
+  Require all denied
+</FilesMatch>
+
+# Long cache for media files
+<IfModule mod_headers.c>
+  Header set Cache-Control "public, max-age=31536000, immutable"
+</IfModule>

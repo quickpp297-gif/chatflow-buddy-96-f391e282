@@ -222,7 +222,11 @@ export function subscribeToContacts(accountId: string, callback: (payload: any) 
 
 /**
  * Upload a file (e.g. recorded audio, image, video, doc) to the account's folder
- * in the whatsapp-media storage bucket and return its public URL.
+ * and return its public URL.
+ *
+ * On Lovable preview / localhost  -> Supabase Storage (whatsapp-media bucket)
+ * On any other host (e.g. Hostinger) -> POST to /uploads.php which writes the
+ * file to the /uploads folder shipped with the dist build.
  */
 export async function uploadAccountMedia(
   accountId: string,
@@ -232,6 +236,36 @@ export async function uploadAccountMedia(
 ): Promise<string> {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${accountId}/outgoing/${Date.now()}_${safeName}`;
+
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
+  const useLocalUploads =
+    host &&
+    !host.endsWith("lovable.app") &&
+    !host.endsWith("lovable.dev") &&
+    host !== "localhost" &&
+    host !== "127.0.0.1";
+
+  if (useLocalUploads) {
+    const form = new FormData();
+    const fileObj =
+      file instanceof File ? file : new File([file], safeName, { type: contentType });
+    form.append("file", fileObj, safeName);
+    form.append("account_id", accountId);
+    form.append("path", path);
+
+    const resp = await fetch("/uploads.php", { method: "POST", body: form });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => "");
+      throw new Error(`Upload failed (${resp.status}): ${txt.slice(0, 200)}`);
+    }
+    const data = await resp.json().catch(() => null);
+    if (!data?.url) throw new Error("Upload response missing url");
+    // Return absolute URL (WhatsApp Cloud API requires public HTTPS URL).
+    return data.url.startsWith("http")
+      ? data.url
+      : `${window.location.origin}${data.url.startsWith("/") ? "" : "/"}${data.url}`;
+  }
+
   const { error } = await supabase.storage
     .from("whatsapp-media")
     .upload(path, file, { contentType, upsert: false });
