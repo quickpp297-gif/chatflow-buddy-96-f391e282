@@ -5,6 +5,10 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  // If you deploy under a subdirectory (e.g. bookskt.online/test/), set:
+  //   VITE_BASE_PATH=/test/   (in your build env)
+  // Otherwise defaults to "/".
+  base: process.env.VITE_BASE_PATH || "/",
   server: {
     host: "::",
     port: 8080,

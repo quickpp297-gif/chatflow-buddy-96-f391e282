@@ -14,6 +14,18 @@
 2. PHP version 7.4+ hona chahiye (default Hostinger pe hota hai).
 3. HTTPS on hona chahiye (WhatsApp Cloud API HTTP media accept nahi karta).
 
+## Subdirectory deploy (IMPORTANT for `bookskt.online/test`)
+
+Agar app `bookskt.online/test/` me daal rahe ho (root pe nahi), to build se pehle yeh karo:
+
+```bash
+VITE_BASE_PATH=/test/ npm run build
+```
+
+Isse `dist/` ke andar saare asset paths `/test/...` ho jaayenge aur `uploads.php` bhi sahi jagah call hoga (`/test/uploads.php`).
+
+Agar app root domain pe (e.g. `bookskt.online/`) hai, to seedha `npm run build` chalao.
+
 ## Kaise kaam karta hai
 
 - Lovable preview (`*.lovable.app`) ya `localhost` pe app chal raha ho → media Supabase storage me jaati hai (jaise pehle).

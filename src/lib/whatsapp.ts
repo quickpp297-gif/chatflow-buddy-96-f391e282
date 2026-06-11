@@ -253,7 +253,10 @@ export async function uploadAccountMedia(
     form.append("account_id", accountId);
     form.append("path", path);
 
-    const resp = await fetch("/uploads.php", { method: "POST", body: form });
+    // Use Vite BASE_URL so subdirectory deploys (e.g. bookskt.online/test/) work.
+    const base = (import.meta as any).env?.BASE_URL || "/";
+    const endpoint = `${base.replace(/\/$/, "")}/uploads.php`;
+    const resp = await fetch(endpoint, { method: "POST", body: form });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => "");
       throw new Error(`Upload failed (${resp.status}): ${txt.slice(0, 200)}`);
