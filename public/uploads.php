@@ -6,7 +6,7 @@
 
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, X-Upload-Secret');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
   http_response_code(204);
@@ -28,6 +28,37 @@ if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
 $file        = $_FILES['file'];
 $accountId   = isset($_POST['account_id']) ? $_POST['account_id'] : '';
 $clientPath  = isset($_POST['path']) ? $_POST['path'] : '';
+$direction   = isset($_POST['direction']) ? $_POST['direction'] : 'outgoing';
+if ($direction !== 'outgoing' && $direction !== 'incoming') {
+  $direction = 'outgoing';
+}
+
+// Incoming uploads come from the server-side webhook and MUST present a shared
+// secret. Outgoing uploads come from the browser and don't need one (the
+// account_id + RLS on the app side already scope them).
+if ($direction === 'incoming') {
+  // Shared secret: must match the UPLOADS_SECRET env var set on the edge
+  // function. On Hostinger, store the value in a sibling file
+  // `uploads_secret.txt` (one line, no quotes). It is blocked from public
+  // access by uploads/.htaccess + the FilesMatch below.
+  $secretFile = __DIR__ . '/uploads_secret.txt';
+  $EXPECTED_SECRET = is_readable($secretFile)
+    ? trim((string) file_get_contents($secretFile))
+    : (getenv('UPLOADS_SECRET') ?: '');
+
+  if ($EXPECTED_SECRET === '') {
+    http_response_code(500);
+    echo json_encode(['error' => 'server_missing_secret']);
+    exit;
+  }
+
+  $provided = $_SERVER['HTTP_X_UPLOAD_SECRET'] ?? '';
+  if (!hash_equals($EXPECTED_SECRET, $provided)) {
+    http_response_code(401);
+    echo json_encode(['error' => 'invalid_secret']);
+    exit;
+  }
+}
 
 // --- Basic validation ----------------------------------------------------
 
@@ -76,7 +107,7 @@ if ($safeName === '' || $safeName[0] === '.') {
   $safeName = 'file_' . bin2hex(random_bytes(4));
 }
 
-$baseDir  = __DIR__ . '/uploads/' . $accountId . '/outgoing';
+$baseDir  = __DIR__ . '/uploads/' . $accountId . '/' . $direction;
 if (!is_dir($baseDir)) {
   if (!mkdir($baseDir, 0775, true) && !is_dir($baseDir)) {
     http_response_code(500);
@@ -100,7 +131,7 @@ if (!move_uploaded_file($file['tmp_name'], $destAbs)) {
 // the filename so the uploads folder URL works in sub-directory installs too.
 
 $scriptDir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/');
-$relUrl    = $scriptDir . '/uploads/' . $accountId . '/outgoing/' . $finalName;
+$relUrl    = $scriptDir . '/uploads/' . $accountId . '/' . $direction . '/' . $finalName;
 
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host   = $_SERVER['HTTP_HOST'] ?? '';

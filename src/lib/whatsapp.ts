@@ -237,41 +237,34 @@ export async function uploadAccountMedia(
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${accountId}/outgoing/${Date.now()}_${safeName}`;
 
-  const host = typeof window !== "undefined" ? window.location.hostname : "";
-  const useLocalUploads =
-    host &&
-    !host.endsWith("lovable.app") &&
-    !host.endsWith("lovable.dev") &&
-    host !== "localhost" &&
-    host !== "127.0.0.1";
+  // Always upload to PHP /uploads endpoint. No Supabase Storage.
+  // Override with VITE_UPLOADS_URL (full URL to uploads.php) at build time.
+  const envEndpoint = (import.meta as any).env?.VITE_UPLOADS_URL as string | undefined;
+  const base = (import.meta as any).env?.BASE_URL || "/";
+  const endpoint =
+    envEndpoint && envEndpoint.length > 0
+      ? envEndpoint
+      : `${base.replace(/\/$/, "")}/uploads.php`;
 
-  if (useLocalUploads) {
-    const form = new FormData();
-    const fileObj =
-      file instanceof File ? file : new File([file], safeName, { type: contentType });
-    form.append("file", fileObj, safeName);
-    form.append("account_id", accountId);
-    form.append("path", path);
+  const form = new FormData();
+  const fileObj =
+    file instanceof File ? file : new File([file], safeName, { type: contentType });
+  form.append("file", fileObj, safeName);
+  form.append("account_id", accountId);
+  form.append("path", path);
+  form.append("direction", "outgoing");
 
-    // Use Vite BASE_URL so subdirectory deploys (e.g. bookskt.online/test/) work.
-    const base = (import.meta as any).env?.BASE_URL || "/";
-    const endpoint = `${base.replace(/\/$/, "")}/uploads.php`;
-    const resp = await fetch(endpoint, { method: "POST", body: form });
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => "");
-      throw new Error(`Upload failed (${resp.status}): ${txt.slice(0, 200)}`);
-    }
-    const data = await resp.json().catch(() => null);
-    if (!data?.url) throw new Error("Upload response missing url");
-    // Return absolute URL (WhatsApp Cloud API requires public HTTPS URL).
-    return data.url.startsWith("http")
-      ? data.url
-      : `${window.location.origin}${data.url.startsWith("/") ? "" : "/"}${data.url}`;
+  const resp = await fetch(endpoint, { method: "POST", body: form });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    throw new Error(`Upload failed (${resp.status}): ${txt.slice(0, 200)}`);
   }
-
-  const { error } = await supabase.storage
-    .from("whatsapp-media")
-    .upload(path, file, { contentType, upsert: false });
-  if (error) throw error;
-  return supabase.storage.from("whatsapp-media").getPublicUrl(path).data.publicUrl;
+  const data = await resp.json().catch(() => null);
+  if (!data?.url) throw new Error("Upload response missing url");
+  if (data.url.startsWith("http")) return data.url;
+  try {
+    return new URL(data.url, endpoint).toString();
+  } catch {
+    return `${window.location.origin}${data.url.startsWith("/") ? "" : "/"}${data.url}`;
+  }
 }
