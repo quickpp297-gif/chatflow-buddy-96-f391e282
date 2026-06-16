@@ -1,0 +1,4 @@
+# Protect the upload-secret file from being downloaded over HTTP.
+<FilesMatch "^uploads_secret\.txt$">
+  Require all denied
+</FilesMatch>
