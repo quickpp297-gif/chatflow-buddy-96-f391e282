@@ -37,8 +37,21 @@ if ($direction !== 'outgoing' && $direction !== 'incoming') {
 // secret. Outgoing uploads come from the browser and don't need one (the
 // account_id + RLS on the app side already scope them).
 if ($direction === 'incoming') {
-  // !! IMPORTANT: keep this in sync with the UPLOADS_SECRET edge function env.
-  $EXPECTED_SECRET = getenv('UPLOADS_SECRET') ?: 'CHANGE_ME_TO_MATCH_EDGE_FUNCTION';
+  // Shared secret: must match the UPLOADS_SECRET env var set on the edge
+  // function. On Hostinger, store the value in a sibling file
+  // `uploads_secret.txt` (one line, no quotes). It is blocked from public
+  // access by uploads/.htaccess + the FilesMatch below.
+  $secretFile = __DIR__ . '/uploads_secret.txt';
+  $EXPECTED_SECRET = is_readable($secretFile)
+    ? trim((string) file_get_contents($secretFile))
+    : (getenv('UPLOADS_SECRET') ?: '');
+
+  if ($EXPECTED_SECRET === '') {
+    http_response_code(500);
+    echo json_encode(['error' => 'server_missing_secret']);
+    exit;
+  }
+
   $provided = $_SERVER['HTTP_X_UPLOAD_SECRET'] ?? '';
   if (!hash_equals($EXPECTED_SECRET, $provided)) {
     http_response_code(401);
