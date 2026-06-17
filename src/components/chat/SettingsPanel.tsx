@@ -6,10 +6,15 @@ import {
 import { useAccount, WaAccount } from "@/hooks/useAccount";
 import {
   ArrowLeft, Save, Plus, Trash2, ToggleLeft, ToggleRight, Globe, Copy, Eye, EyeOff,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Props { onBack: () => void; }
+
+const SENSITIVE_PASSWORD = "12345@Lucky";
+const UNLOCK_KEY = "wa_settings_unlocked_at";
+const UNLOCK_TTL_MS = 15 * 60 * 1000; // 15 min session
 
 export function SettingsPanel({ onBack }: Props) {
   const { current, accounts, refresh, setCurrentId } = useAccount();
@@ -21,6 +26,11 @@ export function SettingsPanel({ onBack }: Props) {
   const [newKeyword, setNewKeyword] = useState("");
   const [newReply, setNewReply] = useState("");
   const [newAccName, setNewAccName] = useState("");
+  const [unlocked, setUnlocked] = useState<boolean>(() => {
+    const t = Number(sessionStorage.getItem(UNLOCK_KEY) || 0);
+    return t > 0 && Date.now() - t < UNLOCK_TTL_MS;
+  });
+  const [pwInput, setPwInput] = useState("");
 
   useEffect(() => { setAccount(current); }, [current]);
 
@@ -91,11 +101,39 @@ export function SettingsPanel({ onBack }: Props) {
     { id: "webhook" as const, label: "Webhook" },
   ];
 
+  const tryUnlock = () => {
+    if (pwInput === SENSITIVE_PASSWORD) {
+      sessionStorage.setItem(UNLOCK_KEY, String(Date.now()));
+      setUnlocked(true);
+      setPwInput("");
+      toast.success("Unlocked");
+    } else {
+      toast.error("Wrong password");
+      setPwInput("");
+    }
+  };
+
+  const lockNow = () => {
+    sessionStorage.removeItem(UNLOCK_KEY);
+    setUnlocked(false);
+    toast.success("Locked");
+  };
+
+  const needsLock = activeTab === "account" || activeTab === "webhook";
+  const showLockGate = needsLock && !unlocked;
+
   return (
     <div className="h-[100dvh] flex flex-col bg-background">
       <div className="flex items-center gap-3 px-4 py-3 bg-[hsl(var(--wa-header))] shrink-0">
         <button onClick={onBack} className="text-primary-foreground"><ArrowLeft size={22} /></button>
         <h1 className="text-lg font-bold text-primary-foreground flex-1">Settings</h1>
+
+        {unlocked && needsLock && (
+          <button onClick={lockNow} title="Lock"
+            className="text-primary-foreground/90 hover:text-primary-foreground mr-1">
+            <Lock size={18} />
+          </button>
+        )}
 
         {accounts.length > 1 && (
           <select
@@ -121,6 +159,31 @@ export function SettingsPanel({ onBack }: Props) {
 
       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
         {loading ? <p className="text-center text-muted-foreground py-8">Loading...</p> :
+         showLockGate ? (
+          <div className="max-w-sm mx-auto mt-12 border border-border rounded-xl p-6 bg-card">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                <Lock size={22} className="text-primary" />
+              </div>
+              <h3 className="text-base font-semibold">Protected section</h3>
+              <p className="text-xs text-muted-foreground mt-1 mb-4">
+                Enter password to {activeTab === "account" ? "edit account & API credentials" : "view webhook details"}.
+              </p>
+              <input
+                type="password"
+                autoFocus
+                value={pwInput}
+                onChange={(e) => setPwInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && tryUnlock()}
+                placeholder="Password"
+                className="input mb-3"
+              />
+              <button onClick={tryUnlock} className="btn-primary w-full justify-center">
+                <Lock size={14} /> Unlock
+              </button>
+            </div>
+          </div>
+         ) :
           <div className="max-w-lg mx-auto space-y-5">
 
             {activeTab === "account" && (
