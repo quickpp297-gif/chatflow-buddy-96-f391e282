@@ -53,9 +53,16 @@ if ($direction === 'incoming') {
   }
 
   $provided = $_SERVER['HTTP_X_UPLOAD_SECRET'] ?? '';
+  // Fallbacks: some Hostinger/cPanel setups strip custom headers, so also
+  // accept the secret via POST field or query string.
+  if ($provided === '' && isset($_POST['secret']))  $provided = (string) $_POST['secret'];
+  if ($provided === '' && isset($_GET['secret']))   $provided = (string) $_GET['secret'];
   if (!hash_equals($EXPECTED_SECRET, $provided)) {
     http_response_code(401);
-    echo json_encode(['error' => 'invalid_secret']);
+    echo json_encode([
+      'error'      => 'invalid_secret',
+      'hint'       => 'Server expected value from uploads_secret.txt or UPLOADS_SECRET env. Check Hostinger header forwarding.',
+    ]);
     exit;
   }
 }

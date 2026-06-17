@@ -22,11 +22,16 @@ async function uploadIncomingToPhp(
   if (!UPLOADS_BASE_URL || !UPLOADS_SECRET) {
     throw new Error("UPLOADS_BASE_URL / UPLOADS_SECRET not configured");
   }
-  const endpoint = `${UPLOADS_BASE_URL}/uploads.php`;
+  // Send the secret three ways so it survives Hostinger header-stripping:
+  //   1) X-Upload-Secret header
+  //   2) `secret` form field
+  //   3) ?secret= query string
+  const endpoint = `${UPLOADS_BASE_URL}/uploads.php?secret=${encodeURIComponent(UPLOADS_SECRET)}`;
   const form = new FormData();
   form.append("file", new Blob([bytes], { type: mime }), filename);
   form.append("account_id", accountId);
   form.append("direction", "incoming");
+  form.append("secret", UPLOADS_SECRET);
   const r = await fetch(endpoint, {
     method: "POST",
     headers: { "X-Upload-Secret": UPLOADS_SECRET },
@@ -34,7 +39,7 @@ async function uploadIncomingToPhp(
   });
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
-    throw new Error(`uploads.php ${r.status}: ${txt.slice(0, 200)}`);
+    throw new Error(`uploads.php ${r.status} @ ${endpoint.split('?')[0]} :: ${txt.slice(0, 300)}`);
   }
   const j = await r.json();
   if (!j?.url) throw new Error("uploads.php missing url");
@@ -213,12 +218,15 @@ Deno.serve(async (req) => {
                   : `${Date.now()}_${mediaId}.${ext}`;
                 try {
                   mediaUrl = await uploadIncomingToPhp(accountId, buf, fname, mediaMimeType);
+                  console.log("incoming media saved:", mediaUrl);
                 } catch (upErr) {
-                  console.error("uploads.php err", upErr);
+                  console.error("uploads.php err:", (upErr as Error).message);
                 }
+              } else {
+                console.error("graph media meta missing url", meta);
               }
             } catch (e) {
-              console.error("media download err", e);
+              console.error("media download err:", (e as Error).message);
             }
           }
 
