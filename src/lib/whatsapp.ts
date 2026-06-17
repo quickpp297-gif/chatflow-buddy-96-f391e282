@@ -257,10 +257,13 @@ export async function uploadAccountMedia(
   const resp = await fetch(endpoint, { method: "POST", body: form });
   if (!resp.ok) {
     const txt = await resp.text().catch(() => "");
-    throw new Error(`Upload failed (${resp.status}): ${txt.slice(0, 200)}`);
+    throw new Error(
+      `Upload failed (${resp.status}) at ${endpoint}: ${txt.slice(0, 200)} — ` +
+        `make sure uploads.php is deployed and /uploads/ folder is writable (755).`,
+    );
   }
   const data = await resp.json().catch(() => null);
-  if (!data?.url) throw new Error("Upload response missing url");
+  if (!data?.url) throw new Error("Upload response missing 'url' field");
   if (data.url.startsWith("http")) return data.url;
   try {
     return new URL(data.url, endpoint).toString();

@@ -21,6 +21,8 @@
    - `UPLOADS_BASE_URL` = `https://bookskt.online/test` (no trailing slash)
    - `UPLOADS_SECRET` = same string jo `uploads_secret.txt` me hai
 
+> Secret triple-fallback: webhook ab secret ko **header + form field + query string** teeno me bhejta hai — Hostinger ke header-stripping issue ka problem solve.
+
 ## Subdirectory deploy (IMPORTANT for `bookskt.online/test`)
 
 Agar app `bookskt.online/test/` me daal rahe ho (root pe nahi), to build se pehle yeh karo:
