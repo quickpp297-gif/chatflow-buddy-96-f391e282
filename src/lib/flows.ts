@@ -37,13 +37,13 @@ export async function fetchFlows(accountId: string): Promise<Flow[]> {
     .eq("account_id", accountId)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data as any[]) as Flow[];
+  return (data as unknown as Flow[]) || [];
 }
 
 export async function createFlow(payload: Partial<Flow> & { account_id: string; user_id: string; name: string }) {
   const { data, error } = await supabase
     .from("flows")
-    .insert({
+    .insert([{
       account_id: payload.account_id,
       user_id: payload.user_id,
       name: payload.name,
@@ -53,18 +53,18 @@ export async function createFlow(payload: Partial<Flow> & { account_id: string; 
       trigger_value: payload.trigger_value ?? null,
       nodes: payload.nodes ?? [],
       edges: payload.edges ?? [],
-      steps: payload.steps ?? [],
+      steps: (payload.steps ?? []) as any,
       meta_flow_json: payload.meta_flow_json ?? null,
       is_active: payload.is_active ?? true,
-    })
+    } as any])
     .select()
     .single();
   if (error) throw error;
-  return data as Flow;
+  return data as unknown as Flow;
 }
 
 export async function updateFlow(id: string, patch: Partial<Flow>) {
-  const { error } = await supabase.from("flows").update(patch).eq("id", id);
+  const { error } = await supabase.from("flows").update(patch as any).eq("id", id);
   if (error) throw error;
 }
 
