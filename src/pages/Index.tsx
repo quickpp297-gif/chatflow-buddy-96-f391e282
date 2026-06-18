@@ -141,7 +141,7 @@ const Index = () => {
   }, [selectedContact]);
 
   useEffect(() => {
-    if (!authLoading && !user) navigate("/auth");
+    if (!authLoading && !user) navigate("/");
   }, [user, authLoading, navigate]);
 
   useEffect(() => {
