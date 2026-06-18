@@ -7,6 +7,7 @@ import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Auth from "./pages/Auth.tsx";
 import Admin from "./pages/Admin.tsx";
+import Landing from "./pages/Landing.tsx";
 import { AuthProvider } from "@/hooks/useAuth";
 import { AccountProvider } from "@/hooks/useAccount";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -25,7 +26,8 @@ const App = () => (
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/admin" element={<Admin />} />
-              <Route path="/" element={<Index />} />
+              <Route path="/" element={<Landing />} />
+              <Route path="/app" element={<Index />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AccountProvider>
