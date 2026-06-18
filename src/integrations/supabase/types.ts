@@ -105,6 +105,68 @@ export type Database = {
           },
         ]
       }
+      flows: {
+        Row: {
+          account_id: string
+          created_at: string
+          description: string | null
+          edges: Json
+          flow_type: string
+          id: string
+          is_active: boolean
+          meta_flow_json: Json | null
+          name: string
+          nodes: Json
+          steps: Json
+          trigger_type: string
+          trigger_value: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          flow_type?: string
+          id?: string
+          is_active?: boolean
+          meta_flow_json?: Json | null
+          name: string
+          nodes?: Json
+          steps?: Json
+          trigger_type?: string
+          trigger_value?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          description?: string | null
+          edges?: Json
+          flow_type?: string
+          id?: string
+          is_active?: boolean
+          meta_flow_json?: Json | null
+          name?: string
+          nodes?: Json
+          steps?: Json
+          trigger_type?: string
+          trigger_value?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flows_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "wa_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           account_id: string | null
