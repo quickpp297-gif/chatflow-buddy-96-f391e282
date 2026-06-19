@@ -4,13 +4,14 @@ import { ContactList } from "@/components/chat/ContactList";
 import { ChatArea } from "@/components/chat/ChatArea";
 import { SettingsPanel } from "@/components/chat/SettingsPanel";
 import { FlowsPanel } from "@/components/flows/FlowsPanel";
+import { AutomationsPanel } from "@/components/automations/AutomationsPanel";
 import {
   Contact, Message, fetchContacts, fetchMessages, markContactRead,
   subscribeToMessages, subscribeToContacts,
 } from "@/lib/whatsapp";
 import { useAuth } from "@/hooks/useAuth";
 import { useAccount } from "@/hooks/useAccount";
-import { Settings, LogOut, ShieldCheck, ChevronDown, Workflow } from "lucide-react";
+import { Settings, LogOut, ShieldCheck, ChevronDown, Workflow, Zap } from "lucide-react";
 import { ensurePushSubscription, pushSupported } from "@/lib/push";
 import { toast } from "sonner";
 
@@ -24,6 +25,7 @@ const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showFlows, setShowFlows] = useState(false);
+  const [showAutomations, setShowAutomations] = useState(false);
   const [showContactList, setShowContactList] = useState(true);
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
@@ -307,6 +309,7 @@ const Index = () => {
 
   if (showSettings) return <SettingsPanel onBack={() => setShowSettings(false)} />;
   if (showFlows) return <FlowsPanel onBack={() => setShowFlows(false)} />;
+  if (showAutomations) return <AutomationsPanel onBack={() => setShowAutomations(false)} />;
 
   if (!account) {
     return (
@@ -354,6 +357,10 @@ const Index = () => {
           <button onClick={() => setShowFlows(true)} title="Flows"
             className="text-primary-foreground/80 hover:text-primary-foreground p-1.5 rounded hover:bg-primary-foreground/10">
             <Workflow size={20} />
+          </button>
+          <button onClick={() => setShowAutomations(true)} title="Automations"
+            className="text-primary-foreground/80 hover:text-primary-foreground p-1.5 rounded hover:bg-primary-foreground/10">
+            <Zap size={20} />
           </button>
           <button onClick={() => setShowSettings(true)} title="Settings"
             className="text-primary-foreground/80 hover:text-primary-foreground p-1.5 rounded hover:bg-primary-foreground/10">
