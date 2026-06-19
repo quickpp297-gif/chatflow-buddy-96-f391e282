@@ -3,14 +3,36 @@ import { supabase } from "@/integrations/supabase/client";
 export type FlowType = "visual" | "sequence" | "meta";
 export type TriggerType = "keyword" | "new_contact" | "any_message" | "manual";
 
-export interface FlowStep {
+export type FlowNodeType =
+  | "message" | "buttons" | "ask" | "media" | "template"
+  | "delay" | "handover" | "end";
+
+export interface FlowNode {
   id: string;
-  type: "message" | "image" | "template" | "delay" | "tag";
-  content?: string;
+  type: FlowNodeType;
+  name?: string;
+  // message / ask
+  body?: string;
+  // ask
+  save_as?: string;
+  // buttons
+  buttons?: { id: string; label: string; next?: string }[];
+  // media
+  media_kind?: "image" | "video" | "document" | "audio";
   media_url?: string;
+  caption?: string;
+  // template
   template_name?: string;
+  template_lang?: string;
+  // delay
   delay_seconds?: number;
+  // next node id (for linear nodes)
+  next?: string;
+  is_start?: boolean;
 }
+
+// Legacy alias kept for any old references
+export type FlowStep = FlowNode;
 
 export interface Flow {
   id: string;
@@ -21,9 +43,9 @@ export interface Flow {
   flow_type: FlowType;
   trigger_type: TriggerType;
   trigger_value: string | null;
-  nodes: any[];
+  nodes: FlowNode[];
   edges: any[];
-  steps: FlowStep[];
+  steps: FlowNode[];
   meta_flow_json: any | null;
   is_active: boolean;
   created_at: string;
