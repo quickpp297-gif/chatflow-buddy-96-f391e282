@@ -55,6 +55,59 @@ export type Database = {
           },
         ]
       }
+      automations: {
+        Row: {
+          account_id: string
+          actions: Json
+          created_at: string
+          id: string
+          is_active: boolean
+          last_run_at: string | null
+          name: string
+          runs_count: number
+          trigger_config: Json
+          trigger_type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          actions?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_run_at?: string | null
+          name?: string
+          runs_count?: number
+          trigger_config?: Json
+          trigger_type?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          actions?: Json
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_run_at?: string | null
+          name?: string
+          runs_count?: number
+          trigger_config?: Json
+          trigger_type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "automations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "wa_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           account_id: string | null
