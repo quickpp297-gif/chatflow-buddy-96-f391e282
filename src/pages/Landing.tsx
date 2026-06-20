@@ -32,7 +32,7 @@ export default function Landing() {
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#25d366] to-[#00a884] flex items-center justify-center shadow-lg shadow-[#00a884]/30">
             <MessageCircle size={20} className="text-[#0b141a]" />
           </div>
-          <span className="font-bold text-lg tracking-tight">FinoXPro</span>
+          <span className="font-bold text-lg tracking-tight">ZentAI</span>
           <span className="hidden sm:inline-block text-[10px] uppercase tracking-widest text-[#25d366] bg-[#25d366]/10 px-2 py-0.5 rounded-full ml-2 border border-[#25d366]/20">Cloud 2050</span>
         </div>
         <nav className="hidden md:flex items-center gap-7 text-sm text-white/70">
@@ -222,7 +222,7 @@ export default function Landing() {
 
       <footer className="relative z-10 border-t border-white/5 mt-10">
         <div className="max-w-7xl mx-auto px-5 sm:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white/40">
-          <div>© {new Date().getFullYear()} FinoXPro · WhatsApp Cloud Suite</div>
+          <div>© {new Date().getFullYear()} ZentAI · WhatsApp Cloud Suite</div>
           <div className="flex gap-5">
             <Link to="/auth" className="hover:text-white">Sign in</Link>
             <a href="#features" className="hover:text-white">Features</a>

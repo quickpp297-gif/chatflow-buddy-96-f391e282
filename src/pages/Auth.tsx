@@ -61,7 +61,7 @@ export default function Auth() {
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#25d366] to-[#00a884] flex items-center justify-center shadow-lg shadow-[#00a884]/30">
             <MessageCircle size={22} className="text-[#0b141a]" />
           </div>
-          <span className="font-bold text-xl">FinoXPro</span>
+          <span className="font-bold text-xl">ZentAI</span>
         </Link>
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-white/80 mb-5 backdrop-blur">
@@ -84,7 +84,7 @@ export default function Auth() {
             ))}
           </div>
         </div>
-        <div className="text-xs text-white/30">© {new Date().getFullYear()} FinoXPro — WhatsApp Cloud Suite</div>
+        <div className="text-xs text-white/30">© {new Date().getFullYear()} ZentAI — WhatsApp Cloud Suite</div>
       </div>
 
       {/* Right form panel */}
@@ -98,7 +98,7 @@ export default function Auth() {
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#25d366] to-[#00a884] flex items-center justify-center">
               <MessageCircle size={22} className="text-[#0b141a]" />
             </div>
-            <span className="font-bold text-xl">FinoXPro</span>
+            <span className="font-bold text-xl">ZentAI</span>
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-7 sm:p-9 shadow-2xl">
